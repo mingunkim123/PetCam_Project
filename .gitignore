@@ -1,0 +1,36 @@
+# --- General & OS ---
+.DS_Store
+.history
+*.log
+*.swp
+
+# --- Flutter (mobile_app) ---
+mobile_app/.dart_tool/
+mobile_app/.flutter-plugins
+mobile_app/.flutter-plugins-dependencies
+mobile_app/.pub-cache/
+mobile_app/.pub/
+mobile_app/build/
+mobile_app/ios/Flutter/.last_build_id
+
+# --- Python & AI Server (ai_server) ---
+**/__pycache__/
+ai_server/venv/
+ai_server/.env
+ai_server/data/       # 대용량 데이터셋이 있다면 제외 권장
+*.py[cod]
+
+# --- Firmware & Embedded (firmware) ---
+# 사장님이 사용하시는 PlatformIO나 Arduino 환경 반영
+firmware/.pio/
+firmware/.vscode/
+firmware/build/
+*.hex
+*.bin
+
+# --- IDEs (VS Code & IntelliJ) ---
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
