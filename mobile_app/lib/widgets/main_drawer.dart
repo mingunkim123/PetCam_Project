@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../constants.dart';
+import '../utils/constants.dart';
 
 class MainDrawer extends StatelessWidget {
   const MainDrawer({super.key});
@@ -7,21 +7,54 @@ class MainDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
+      backgroundColor: Colors.white,
       child: Column(
         children: [
-          UserAccountsDrawerHeader(
-            decoration: const BoxDecoration(color: kPrimaryColor),
-            accountName: const Text("PetCam User", style: TextStyle(fontWeight: FontWeight.bold)),
-            accountEmail: const Text("yonsei.ac.kr"), // 사장님의 소속감!
-            currentAccountPicture: const CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Icon(Icons.pets, color: kPrimaryColor, size: 40),
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
+            decoration: const BoxDecoration(
+              gradient: kPrimaryGradient,
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 32,
+                  backgroundColor: Colors.white,
+                  child: const Icon(Icons.pets_rounded, color: kSecondaryColor, size: 36),
+                ),
+                const SizedBox(width: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "PetCam User",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "yonsei.ac.kr",
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.8),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          _buildMenuItem(context, Icons.map_outlined, "산책 지도 (GPS)", "/map"),
-          _buildMenuItem(context, Icons.photo_library_outlined, "저장된 사진", "/gallery"),
-          const Divider(),
-          _buildMenuItem(context, Icons.settings_outlined, "설정", null),
+          const SizedBox(height: 20),
+          _buildMenuItem(context, Icons.map_rounded, "Walking Map", "/map"),
+          _buildMenuItem(context, Icons.photo_library_rounded, "Gallery", "/gallery"),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Divider(),
+          ),
+          _buildMenuItem(context, Icons.settings_rounded, "Settings", null),
         ],
       ),
     );
@@ -29,8 +62,23 @@ class MainDrawer extends StatelessWidget {
 
   Widget _buildMenuItem(BuildContext context, IconData icon, String title, String? route) {
     return ListTile(
-      leading: Icon(icon, color: kPrimaryColor),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: kSecondaryColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: kSecondaryColor, size: 22),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
+          color: kPrimaryColor,
+        ),
+      ),
       onTap: () {
         Navigator.pop(context); // 드로어 닫기
         if (route != null) Navigator.pushNamed(context, route);

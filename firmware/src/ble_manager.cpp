@@ -36,6 +36,20 @@ class MyCmdCallbacks: public BLECharacteristicCallbacks {
             uint8_t receivedCmd = value[0];
             Serial.printf("📥 [BLE] 명령 수신: 0x%02X\n", receivedCmd);
 
+            // 📍 GPS 데이터 파싱 (1byte CMD + 8byte Lat + 8byte Lng = 17bytes)
+            if (value.length() >= 17) {
+                double lat, lng;
+                memcpy(&lat, &value[1], 8);
+                memcpy(&lng, &value[9], 8);
+                currentLat = lat;
+                currentLng = lng;
+                Serial.printf("📍 위치 수신: %f, %f\n", currentLat, currentLng);
+            } else {
+                Serial.println("⚠️ 위치 정보 없음 (기본값 0.0 사용)");
+                currentLat = 0.0;
+                currentLng = 0.0;
+            }
+
             if (receivedCmd == 0x01) { // 단발 촬영
                 takePhotoFlag = true;
                 Serial.println("🎯 [FLAG] 단발 촬영 예약됨");
@@ -44,6 +58,10 @@ class MyCmdCallbacks: public BLECharacteristicCallbacks {
                 // 여기에 '몇 장 찍을지' 숫자를 넣어줘야 합니다!
                 burstCount = 3; // 예: 3장 연속 촬영
                 Serial.println("🎯 [FLAG] 연속 촬영 시작 (3장)");
+            }
+            else if (receivedCmd == 0x03) { // 📸 미리보기
+                previewFlag = true;
+                Serial.println("🎯 [FLAG] 미리보기 요청됨");
             }
         }
     }

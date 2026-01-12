@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:geolocator/geolocator.dart'; // GPS 패키지 추가
 import 'ai_service.dart'; // AiService 연결
 
 class BleService {
@@ -18,27 +19,60 @@ class BleService {
   StreamSubscription? _lastValueSubscription;
 
   final List<int> _imageBuffer = []; // 조각 조립용 버퍼
-  List<Uint8List> burstBuffer = [];  // 연속 촬영 저장소 (3장용)
-  bool isBurstMode = false;          // 현재 연속 촬영 모드인지 확인
+  List<Uint8List> burstBuffer = []; // 연속 촬영 저장소 (3장용)
+  bool isBurstMode = false; // 현재 연속 촬영 모드인지 확인
+  bool isPreviewMode = false; // 미리보기 모드 확인
 
   Function(Uint8List)? onImageReceived;
+  Function(Uint8List)? onPreviewReceived; // 미리보기 수신 콜백
   Function(bool)? onConnectionChanged;
 
   Future<void> connectToDevice() async {
-    print("🔎 'TEST' 장치 검색 시작...");
-    FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+    print("🔎 'TEST' 장치 검색 시작... (15초 대기)");
+    FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
 
     var subscription = FlutterBluePlus.onScanResults.listen((results) async {
       for (ScanResult r in results) {
-        if (r.advertisementData.advName == "TEST") {
+        // [디버깅] 검색된 기기 정보 상세 출력
+        print("📡 발견: ${r.device.platformName} (${r.device.remoteId})");
+        print("   UUIDs: ${r.advertisementData.serviceUuids}");
+
+        // 1. 이름으로 찾기 ("TEST")
+        bool nameMatch =
+            r.advertisementData.advName == "TEST" ||
+            r.device.platformName == "TEST";
+
+        // 2. 서비스 UUID로 찾기 (더 확실함)
+        bool uuidMatch = r.advertisementData.serviceUuids.contains(
+          Guid(serviceUuid),
+        );
+
+        if (nameMatch || uuidMatch) {
+          print("✅ 타겟 장치 발견! (Name: $nameMatch, UUID: $uuidMatch)");
           _targetDevice = r.device;
           FlutterBluePlus.stopScan();
           try {
-            await _targetDevice!.disconnect().catchError((e) => print("기존 연결 없음"));
+            await _targetDevice!.disconnect().catchError(
+              (e) => print("기존 연결 없음"),
+            );
             await Future.delayed(const Duration(milliseconds: 500));
+
+            // 💡 연결 상태 리스너 등록 (연결 끊김 감지용)
+            _targetDevice!.connectionState.listen((
+              BluetoothConnectionState state,
+            ) {
+              print("🔌 연결 상태 변경: $state");
+              if (state == BluetoothConnectionState.disconnected) {
+                onConnectionChanged?.call(false);
+                _cmdCharacteristic = null; // 특성 초기화
+              } else if (state == BluetoothConnectionState.connected) {
+                onConnectionChanged?.call(true);
+              }
+            });
+
             await _targetDevice!.connect(autoConnect: false);
             print("✅ 하드웨어 연결 성공: ${_targetDevice!.remoteId}");
-            onConnectionChanged?.call(true);
+
             await _targetDevice!.requestMtu(512);
             _discoverServices();
           } catch (e) {
@@ -68,7 +102,9 @@ class BleService {
   void _setupNotifications(BluetoothCharacteristic characteristic) async {
     await characteristic.setNotifyValue(true);
     _lastValueSubscription?.cancel();
-    _lastValueSubscription = characteristic.lastValueStream.listen((value) async {
+    _lastValueSubscription = characteristic.lastValueStream.listen((
+      value,
+    ) async {
       if (value.isEmpty) return;
 
       // 💡 JPEG 시작(SOI) 감지 시 버퍼 초기화
@@ -79,11 +115,19 @@ class BleService {
       _imageBuffer.addAll(value);
 
       // 💡 JPEG 끝(EOI) 감지 시 사진 완성
-      if (_imageBuffer.length >= 2 && _imageBuffer[_imageBuffer.length - 2] == 0xFF && _imageBuffer[_imageBuffer.length - 1] == 0xD9) {
+      if (_imageBuffer.length >= 2 &&
+          _imageBuffer[_imageBuffer.length - 2] == 0xFF &&
+          _imageBuffer[_imageBuffer.length - 1] == 0xD9) {
         Uint8List completedImage = Uint8List.fromList(_imageBuffer);
         _imageBuffer.clear();
-        
-        if (isBurstMode) {
+
+        print("📦 이미지 수신 완료 (${completedImage.length} bytes)");
+
+        if (isPreviewMode) {
+          print("📸 미리보기 이미지 수신 완료!");
+          onPreviewReceived?.call(completedImage);
+          isPreviewMode = false;
+        } else if (isBurstMode) {
           burstBuffer.add(completedImage);
           print("📥 연속 촬영 이미지 수집: ${burstBuffer.length}/3");
           if (burstBuffer.length == 3) {
@@ -102,14 +146,81 @@ class BleService {
     });
   }
 
+  // 📍 현재 위치 가져오기 헬퍼
+  Future<Position?> _getCurrentLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return null;
+      }
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+    } catch (e) {
+      print("❌ 위치 가져오기 실패: $e");
+      return null;
+    }
+  }
+
+  // 📦 GPS 데이터를 바이트로 변환 (Double 8byte * 2 = 16byte)
+  List<int> _packGpsData(double lat, double lng) {
+    var buffer = ByteData(16);
+    buffer.setFloat64(0, lat, Endian.little); // Little Endian (ESP32)
+    buffer.setFloat64(8, lng, Endian.little);
+    return buffer.buffer.asUint8List().toList();
+  }
+
   Future<void> sendSnapCommand() async {
     isBurstMode = false;
-    if (_cmdCharacteristic != null) await _cmdCharacteristic!.write([0x01]);
+    if (_cmdCharacteristic != null) {
+      // 1. 위치 가져오기
+      Position? position = await _getCurrentLocation();
+      double lat = position?.latitude ?? 0.0;
+      double lng = position?.longitude ?? 0.0;
+      print("📍 전송할 위치: $lat, $lng");
+
+      // 2. 패킷 생성: [CMD(1)] + [Lat(8)] + [Lng(8)]
+      List<int> packet = [0x01];
+      packet.addAll(_packGpsData(lat, lng));
+
+      await _cmdCharacteristic!.write(packet);
+    }
   }
 
   Future<void> sendBurstCommand() async {
     isBurstMode = true;
     burstBuffer.clear();
-    if (_cmdCharacteristic != null) await _cmdCharacteristic!.write([0x02]);
+    if (_cmdCharacteristic != null) {
+      // 1. 위치 가져오기
+      Position? position = await _getCurrentLocation();
+      double lat = position?.latitude ?? 0.0;
+      double lng = position?.longitude ?? 0.0;
+      print("📍 전송할 위치(연속): $lat, $lng");
+
+      // 2. 패킷 생성: [CMD(1)] + [Lat(8)] + [Lng(8)]
+      List<int> packet = [0x02];
+      packet.addAll(_packGpsData(lat, lng));
+
+      print("📤 [BLE] 연속 촬영 명령 전송 (0x02 + GPS)");
+      await _cmdCharacteristic!.write(packet, withoutResponse: true);
+    }
+  }
+
+  // 📸 미리보기 요청 (0x03) - 미리보기는 GPS 필요 없음
+  Future<void> sendPreviewCommand() async {
+    if (_cmdCharacteristic == null) {
+      print("❌ 명령 채널이 연결되지 않음");
+      return;
+    }
+    try {
+      isPreviewMode = true; // 미리보기 모드 활성화
+      print("📤 [BLE] 미리보기 요청 전송 (0x03)");
+      await _cmdCharacteristic!.write([0x03], withoutResponse: true);
+    } catch (e) {
+      print("❌ 전송 실패: $e");
+      isPreviewMode = false;
+      onConnectionChanged?.call(false); // 연결 끊김으로 간주
+    }
   }
 }

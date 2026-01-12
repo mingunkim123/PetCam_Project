@@ -3,10 +3,12 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:provider/provider.dart';
 
 // 💡 사장님의 파일 경로에 맞춰 임포트 (경로가 다르면 수정하세요)
+import 'package:google_fonts/google_fonts.dart';
+import 'screens/gallery_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/map_screen.dart';
 import 'providers/photo_provider.dart';
-import 'constants.dart';
+import 'utils/constants.dart';
 
 void main() async {
   // 1. Flutter 바인딩 초기화
@@ -21,9 +23,7 @@ void main() async {
   // 3. Provider와 함께 앱 실행
   runApp(
     MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => PhotoProvider()),
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => PhotoProvider())],
       child: const MyApp(),
     ),
   );
@@ -42,11 +42,19 @@ class MyApp extends StatelessWidget {
         primaryColor: kPrimaryColor,
         scaffoldBackgroundColor: kBgColor,
         useMaterial3: true,
+        textTheme: GoogleFonts.poppinsTextTheme(Theme.of(context).textTheme),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: kSecondaryColor,
+          primary: kPrimaryColor,
+          secondary: kSecondaryColor,
+          surface: kSurfaceColor,
+        ),
       ),
       home: const HomeScreen(),
       // 💡 에러 해결: const MapScreen()에서 에러가 나면 const를 빼주세요.
       routes: {
         '/map': (context) => MapScreen(),
+        '/gallery': (context) => const GalleryScreen(),
       },
     );
   }

@@ -44,6 +44,7 @@ dependencies:
   # 💡 [추가] 정밀한 권한 관리를 위한 패키지 (EE 전공자 추천)
   # GPS와 블루투스 권한을 더 확실하게 제어할 수 있습니다. [cite: 2025-08-13]
   permission_handler: ^11.3.1
+  google_fonts: ^6.3.3
   
 
 dev_dependencies:
@@ -69,7 +70,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
+  assets:
+    - assets/marker_icon.png
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

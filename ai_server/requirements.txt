@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlalchemy
+pillow
+opencv-python
+numpy
+RealESRGAN
+pydantic-settings
+psycopg2-binary
+torch
+torchvision
+python-multipart

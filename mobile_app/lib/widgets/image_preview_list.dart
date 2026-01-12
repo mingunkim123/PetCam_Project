@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import '../constants.dart';
+import '../utils/constants.dart';
 import '../models/pet_photo.dart';
 
-class ImagePreviewList extends StatelessWidget {
-  final List<PetPhoto> photos;       // Uint8List에서 PetPhoto 리스트로 변경
+class ImagePreviewList extends StatefulWidget {
+  final List<PetPhoto> photos;
   final int? recommendedIndex;
   final int? confirmedIndex;
   final Function(int) onSelect;
@@ -19,55 +19,97 @@ class ImagePreviewList extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-      itemCount: photos.length,
-      itemBuilder: (context, index) {
-        final photo = photos[index];
-        bool isRec = recommendedIndex == index;
-        bool isConf = confirmedIndex == index;
+  State<ImagePreviewList> createState() => _ImagePreviewListState();
+}
 
-        return Padding(
-          padding: const EdgeInsets.only(right: 24),
+class _ImagePreviewListState extends State<ImagePreviewList> {
+  late PageController _pageController;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(viewportFraction: 0.75);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PageView.builder(
+      controller: _pageController,
+      itemCount: widget.photos.length,
+      onPageChanged: (index) {
+        setState(() => _currentPage = index);
+        widget.onSelect(index);
+      },
+      physics: const BouncingScrollPhysics(),
+      itemBuilder: (context, index) {
+        final photo = widget.photos[index];
+        bool isRec = widget.recommendedIndex == index;
+        bool isConf = widget.confirmedIndex == index;
+        bool isActive = _currentPage == index;
+
+        // Animation scale
+        double scale = isActive ? 1.0 : 0.9;
+        
+        return TweenAnimationBuilder(
+          tween: Tween(begin: scale, end: scale),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutBack,
+          builder: (context, double value, child) {
+            return Transform.scale(
+              scale: value,
+              child: child,
+            );
+          },
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 이미지 카드 부분
-              GestureDetector(
-                onTap: () => onSelect(index),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
+              // Image Card
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 20),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(
-                      color: isConf ? kPrimaryColor : Colors.transparent,
-                      width: 4,
-                    ),
+                    borderRadius: BorderRadius.circular(32),
                     boxShadow: [
-                      BoxShadow(
-                        color: isConf 
-                            ? kPrimaryColor.withOpacity(0.2) 
-                            : Colors.black.withOpacity(0.05),
-                        blurRadius: 15,
-                        offset: const Offset(0, 8),
-                      )
+                      isActive ? kStrongShadow : kSoftShadow,
+                      if (isConf) 
+                        BoxShadow(
+                          color: kSecondaryColor.withOpacity(0.4),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
                     ],
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(32),
                     child: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        // 원본 이미지를 보여줌
                         Image.memory(
-                          photo.originalBytes, 
-                          width: 280, 
-                          height: 380, 
-                          fit: BoxFit.cover
+                          photo.originalBytes,
+                          fit: BoxFit.cover,
                         ),
-                        // AI BEST 뱃지 (추천 인덱스일 때만)
+                        // Gradient Overlay
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withOpacity(0.3),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // Badges
                         if (isRec) _buildBadge("✨ AI BEST", kAccentColor),
-                        // AI 변환 완료 표시
                         if (photo.isAiProcessed) 
                           _buildBadge("✅ UPSCALED", Colors.greenAccent),
                       ],
@@ -75,31 +117,36 @@ class ImagePreviewList extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
               
-              // 선택된 사진 하단에 나타나는 AI 변환 버튼
-              if (isConf)
-                AnimatedOpacity(
-                  duration: const Duration(milliseconds: 200),
-                  opacity: 1.0,
-                  child: ElevatedButton.icon(
-                    onPressed: () => onAiUpscale(index),
-                    icon: const Icon(Icons.auto_fix_high, size: 20),
-                    label: Text(
-                      photo.isAiProcessed ? "다시 고화질 변환" : "AI 고화질 변환",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: kPrimaryColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      elevation: 4,
-                    ),
-                  ),
-                ),
+              // Action Button
+              SizedBox(
+                height: 60,
+                child: isActive
+                    ? AnimatedOpacity(
+                        duration: const Duration(milliseconds: 300),
+                        opacity: 1.0,
+                        child: ElevatedButton.icon(
+                          onPressed: () => widget.onAiUpscale(index),
+                          icon: const Icon(Icons.auto_fix_high, size: 20),
+                          label: Text(
+                            photo.isAiProcessed ? "Re-Upscale" : "AI Upscale",
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kPrimaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            elevation: 8,
+                            shadowColor: kPrimaryColor.withOpacity(0.4),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 20),
             ],
           ),
         );
@@ -107,26 +154,25 @@ class ImagePreviewList extends StatelessWidget {
     );
   }
 
-  // 상단 뱃지 위젯 (BEST 컷이나 변환 여부 표시용)
   Widget _buildBadge(String text, Color color) {
     return Positioned(
-      top: 16,
-      left: 16,
+      top: 20,
+      left: 20,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: const [
-            BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
+            BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))
           ],
         ),
         child: Text(
           text,
           style: const TextStyle(
-            fontSize: 11, 
-            fontWeight: FontWeight.w900, // Error 났던 부분: w900으로 안전하게 처리
-            color: Colors.black87
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: Colors.black87,
           ),
         ),
       ),
