@@ -306,13 +306,13 @@ class _BurstProgressDialogState extends State<BurstProgressDialog> {
   }
 
   void _startSimulation() async {
-    // 1. 촬영 시뮬레이션 (0.5s 간격 * 3장)
-    for (int i = 1; i <= 3; i++) {
+    // 1. 촬영 시뮬레이션 (0.3s 간격 * 10장) - 실제 펌웨어 속도에 맞춤
+    for (int i = 1; i <= 10; i++) {
       if (!mounted) return;
       setState(() {
-        _status = "📸 연속 촬영 중... ($i/3)";
+        _status = "📸 연속 촬영 중... ($i/10)";
       });
-      await Future.delayed(const Duration(milliseconds: 800));
+      await Future.delayed(const Duration(milliseconds: 300)); // 10장이니 조금 더 빠르게
     }
 
     // 2. 베스트 컷 분석

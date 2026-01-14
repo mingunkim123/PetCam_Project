@@ -27,7 +27,6 @@ class MyServerCallbacks: public BLEServerCallbacks {
 };
 
 // 2. ⭐️ 명령 수신 콜백 (명령 채널 전용)
-// 2. ⭐️ 명령 수신 콜백 수정
 class MyCmdCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
         std::string value = pCharacteristic->getValue();
@@ -55,9 +54,9 @@ class MyCmdCallbacks: public BLECharacteristicCallbacks {
                 Serial.println("🎯 [FLAG] 단발 촬영 예약됨");
             } 
             else if (receivedCmd == 0x02) { // 💡 연속 촬영
-                // 여기에 '몇 장 찍을지' 숫자를 넣어줘야 합니다!
-                burstCount = 3; // 예: 3장 연속 촬영
-                Serial.println("🎯 [FLAG] 연속 촬영 시작 (3장)");
+                // 사용자의 요청으로 10장 연속 촬영으로 변경
+                burstCount = 10; 
+                Serial.println("🎯 [FLAG] 연속 촬영 시작 (10장)");
             }
             else if (receivedCmd == 0x03) { // 📸 미리보기
                 previewFlag = true;
@@ -110,8 +109,14 @@ void initBLE() {
 void sendImageBLE(uint8_t* data, size_t len) {
     if (!deviceConnected) return;
 
+    // 1. 사이즈 정보 먼저 전송 (헤더)
+    String header = "SIZE:" + String(len);
+    pCharacteristic->setValue((uint8_t*)header.c_str(), header.length());
+    pCharacteristic->notify();
+    delay(50); // 헤더 전송 후 잠시 대기
+
     size_t pos = 0;
-    const size_t chunkSize = 500; // MTU 512 기준 안정적인 크기 [cite: 2025-08-13]
+    const size_t chunkSize = 128; // MTU 문제 방지를 위해 128 유지
 
     Serial.printf("📤 [BLE] 사진 전송 시작 (%d bytes)...\n", len);
 
@@ -120,7 +125,7 @@ void sendImageBLE(uint8_t* data, size_t len) {
         pCharacteristic->setValue(&data[pos], size);
         pCharacteristic->notify();
         pos += size;
-        delay(10); // 폰이 처리할 수 있게 아주 짧은 대기 시간 [cite: 2025-12-18]
+        delay(20); // 10ms -> 20ms로 늘려서 안정성 확보
     }
 
     Serial.println("✅ [BLE] 전송 완료");

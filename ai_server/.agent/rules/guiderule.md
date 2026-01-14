@@ -15,3 +15,5 @@ trigger: always_on
 항상 한국말로 대답
 
 implementation plan이랑 walkrhtough도 한국어로 적어줘
+
+항상 change_code_review를 보여줘

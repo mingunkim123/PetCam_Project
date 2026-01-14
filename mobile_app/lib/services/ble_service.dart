@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:convert'; // utf8 decoding
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:geolocator/geolocator.dart'; // GPS 패키지 추가
 import 'ai_service.dart'; // AiService 연결
@@ -19,7 +20,9 @@ class BleService {
   StreamSubscription? _lastValueSubscription;
 
   final List<int> _imageBuffer = []; // 조각 조립용 버퍼
-  List<Uint8List> burstBuffer = []; // 연속 촬영 저장소 (3장용)
+  int _expectedSize = 0; // 예상되는 이미지 크기
+
+  // List<Uint8List> burstBuffer = []; // ❌ 더 이상 앱에서 모으지 않음 (펌웨어가 골라줌)
   bool isBurstMode = false; // 현재 연속 촬영 모드인지 확인
   bool isPreviewMode = false; // 미리보기 모드 확인
 
@@ -107,36 +110,44 @@ class BleService {
     ) async {
       if (value.isEmpty) return;
 
-      // 💡 JPEG 시작(SOI) 감지 시 버퍼 초기화
-      if (value.length >= 2 && value[0] == 0xFF && value[1] == 0xD8) {
-        _imageBuffer.clear();
+      // 1. 헤더 감지 (SIZE:xxxxx)
+      try {
+        String str = utf8.decode(value);
+        if (str.startsWith("SIZE:")) {
+          String sizeStr = str.substring(5);
+          _expectedSize = int.tryParse(sizeStr) ?? 0;
+          _imageBuffer.clear();
+          print("📥 [BLE] 이미지 수신 시작! 예상 크기: $_expectedSize bytes");
+          return; // 헤더는 이미지 데이터가 아니므로 리턴
+        }
+      } catch (e) {
+        // utf8 디코딩 실패 시 그냥 바이너리 데이터로 간주하고 진행
       }
 
+      // 2. 데이터 누적
       _imageBuffer.addAll(value);
 
-      // 💡 JPEG 끝(EOI) 감지 시 사진 완성
-      if (_imageBuffer.length >= 2 &&
-          _imageBuffer[_imageBuffer.length - 2] == 0xFF &&
-          _imageBuffer[_imageBuffer.length - 1] == 0xD9) {
+      // 진행률 로그 (너무 자주 찍히면 주석 처리)
+      // print("📥 [BLE] Progress: ${_imageBuffer.length} / $_expectedSize");
+
+      // 3. 완료 체크 (예상 크기 도달 시)
+      if (_expectedSize > 0 && _imageBuffer.length >= _expectedSize) {
+        print("📦 이미지 수신 완료! (Total: ${_imageBuffer.length} bytes)");
+
         Uint8List completedImage = Uint8List.fromList(_imageBuffer);
         _imageBuffer.clear();
-
-        print("📦 이미지 수신 완료 (${completedImage.length} bytes)");
+        _expectedSize = 0; // 초기화
 
         if (isPreviewMode) {
-          print("📸 미리보기 이미지 수신 완료!");
+          print("📸 미리보기 이미지 처리");
           onPreviewReceived?.call(completedImage);
           isPreviewMode = false;
         } else if (isBurstMode) {
-          burstBuffer.add(completedImage);
-          print("📥 연속 촬영 이미지 수집: ${burstBuffer.length}/3");
-          if (burstBuffer.length == 3) {
-            print("🚀 3장 합체 완료! AI 서버 전송...");
-            Uint8List? best = await _aiService.getBestCut(burstBuffer);
-            if (best != null) onImageReceived?.call(best);
-            burstBuffer.clear();
-            isBurstMode = false;
-          }
+          // 💡 [수정] 펌웨어가 이미 Best Cut을 골라서 1장만 보내주므로, 3장을 기다릴 필요 없음!
+          print("📸 연속 촬영(Best Cut) 수신 완료! AI 업스케일링 전송...");
+          Uint8List? upscaled = await _aiService.upscaleImage(completedImage);
+          onImageReceived?.call(upscaled ?? completedImage);
+          isBurstMode = false;
         } else {
           print("📸 단발 촬영 완료! AI 업스케일링 전송...");
           Uint8List? upscaled = await _aiService.upscaleImage(completedImage);
@@ -190,7 +201,7 @@ class BleService {
 
   Future<void> sendBurstCommand() async {
     isBurstMode = true;
-    burstBuffer.clear();
+    // burstBuffer.clear(); // 사용 안 함
     if (_cmdCharacteristic != null) {
       // 1. 위치 가져오기
       Position? position = await _getCurrentLocation();

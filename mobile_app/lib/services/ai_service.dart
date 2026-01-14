@@ -7,7 +7,7 @@ class AiService {
   // 💡 사장님 PC의 현재 IP로 수정 필수!
   static const String baseUrl = "http://172.24.112.37:8000";
 
-  // 1장 업스케일링
+  // 1장 업스케일링 요청 (JSON 응답 -> 이미지 다운로드)
   Future<Uint8List?> upscaleImage(Uint8List imageBytes) async {
     try {
       var request = http.MultipartRequest(
@@ -22,8 +22,19 @@ class AiService {
           contentType: MediaType('image', 'jpeg'),
         ),
       );
+
+      // 1. 업로드 요청
       var response = await http.Response.fromStream(await request.send());
-      if (response.statusCode == 200) return response.bodyBytes;
+
+      if (response.statusCode == 200) {
+        // 2. JSON 파싱 (ID 추출)
+        var jsonResponse = jsonDecode(response.body);
+        String photoId = jsonResponse['id'];
+        print("✅ 업로드 성공! ID: $photoId");
+
+        // 3. 이미지 다운로드 (바로 요청하면 원본이 오고, 나중에 변환됨)
+        return await downloadPhoto(getPhotoUrl(photoId));
+      }
     } catch (e) {
       print("❌ AI 업스케일링 에러: $e");
       if (e.toString().contains("Connection refused")) {
@@ -51,7 +62,16 @@ class AiService {
         );
       }
       var response = await http.Response.fromStream(await request.send());
-      if (response.statusCode == 200) return response.bodyBytes;
+
+      if (response.statusCode == 200) {
+        // JSON 파싱
+        var jsonResponse = jsonDecode(response.body);
+        String photoId = jsonResponse['id'];
+        print("✅ 베스트컷 업로드 성공! ID: $photoId");
+
+        // 이미지 다운로드
+        return await downloadPhoto(getPhotoUrl(photoId));
+      }
     } catch (e) {
       print("❌ 베스트 컷 통신 에러: $e");
       if (e.toString().contains("Connection refused")) {

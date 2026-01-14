@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Depends
+from fastapi import FastAPI, UploadFile, File, Depends, BackgroundTasks
 from fastapi.responses import Response
 import torch
 from PIL import Image
@@ -61,66 +61,94 @@ def get_blur_score(image_bytes):
     return cv2.Laplacian(img, cv2.CV_64F).var()
 
 
+def process_image_task(photo_id: str, original_path: str):
+    """백그라운드에서 실행될 AI 처리 작업"""
+    print(f"🔄 [Background] Processing photo {photo_id} started...")
+
+    try:
+        # DB 세션 생성 (백그라운드 작업용)
+        db = SessionLocal()
+
+        # 1. 이미지 로드
+        image = Image.open(original_path).convert("RGB")
+
+        # [OOM 방지] 이미지 크기 조정 (Max 1080px)
+        max_size = 1080
+        if image.width > max_size or image.height > max_size:
+            image.thumbnail((max_size, max_size), Image.LANCZOS)
+
+        # 2. AI 처리
+        torch.cuda.empty_cache()
+        with torch.no_grad():
+            sr_image = model.predict(image)
+        torch.cuda.empty_cache()
+
+        # 3. 결과 저장
+        res_path = f"storage/results/{photo_id}.jpg"
+        sr_image.save(res_path, format="JPEG")
+
+        # 4. DB 업데이트
+        record = db.query(PhotoRecord).filter(PhotoRecord.id == photo_id).first()
+        if record:
+            record.upscaled_path = res_path
+            record.is_ai_processed = True
+            db.commit()
+            print(f"✅ [Background] Processing photo {photo_id} completed!")
+        else:
+            print(f"❌ [Background] Record not found for {photo_id}")
+
+        db.close()
+
+    except Exception as e:
+        print(f"❌ [Background] Error processing {photo_id}: {e}")
+
+
 @app.post("/upscale")
 def upscale_image(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     lat: float = 0.0,  # 📍 쿼리 파라미터 추가
     lng: float = 0.0,  # 📍 쿼리 파라미터 추가
     db: Session = Depends(get_db),
 ):
-    torch.cuda.empty_cache()  # 메모리 정리
     contents = file.file.read()
     photo_id = str(uuid.uuid4())  # 고유 ID 생성
 
-    # 1. 원본 저장
+    # 1. 원본 저장 (즉시 수행)
     orig_path = f"storage/originals/{photo_id}.jpg"
     with open(orig_path, "wb") as f:
         f.write(contents)
 
-    # 2. AI 처리
-    image = Image.open(io.BytesIO(contents)).convert("RGB")
-
-    # [OOM 방지] 이미지 크기 조정 (Max 1080px)
-    # 5MP(2592x1944) -> x4 -> 80MP는 메모리 터짐.
-    # 1080p로 줄여서 x4 -> 4K급(16MP)으로 만드는게 적절함.
-    max_size = 1080
-    if image.width > max_size or image.height > max_size:
-        image.thumbnail((max_size, max_size), Image.LANCZOS)
-
-    with torch.no_grad():  # 그래디언트 계산 끔 (메모리 절약)
-        sr_image = model.predict(image)
-
-    torch.cuda.empty_cache()  # 메모리 정리
-
-    # 3. 결과 저장
-    res_path = f"storage/results/{photo_id}.jpg"
-    sr_image.save(res_path, format="JPEG")
-
-    # 4. DB 기록 (C++의 db->insert()와 같음)
+    # 2. DB 기록 (처리 전 상태로 저장)
     db_record = PhotoRecord(
         id=photo_id,
         original_path=orig_path,
-        upscaled_path=res_path,
-        is_ai_processed=True,
-        latitude=lat,  # 📍 저장
-        longitude=lng,  # 📍 저장
+        upscaled_path=None,  # 아직 없음
+        is_ai_processed=False,  # 처리 대기 중
+        latitude=lat,
+        longitude=lng,
     )
     db.add(db_record)
     db.commit()
 
-    img_byte_arr = io.BytesIO()
-    sr_image.save(img_byte_arr, format="JPEG")
-    return Response(content=img_byte_arr.getvalue(), media_type="image/jpeg")
+    # 3. 백그라운드 작업 등록 (AI 처리는 나중에)
+    background_tasks.add_task(process_image_task, photo_id, orig_path)
+
+    # 4. 즉시 응답 (202 Accepted 느낌으로)
+    return {"message": "Upload successful, processing in background", "id": photo_id}
 
 
 @app.post("/bestcut")
 def process_best_cut(
+    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     lat: float = 0.0,
     lng: float = 0.0,
     db: Session = Depends(get_db),
 ):
-    torch.cuda.empty_cache()
+    # Best Cut 선별은 CPU 연산이라 비교적 빠르므로 여기서 수행해도 됨
+    # (하지만 파일이 많으면 이것도 백그라운드로 뺄 수 있음. 일단은 유지)
+
     best_score = -1.0
     best_content = None
 
@@ -133,40 +161,31 @@ def process_best_cut(
 
     if best_content:
         photo_id = str(uuid.uuid4())
-        # (위 upscale_image와 동일한 저장 및 DB 기록 로직 수행)
-        image = Image.open(io.BytesIO(best_content)).convert("RGB")
-
-        # [OOM 방지] 이미지 크기 조정
-        max_size = 1080
-        if image.width > max_size or image.height > max_size:
-            image.thumbnail((max_size, max_size), Image.LANCZOS)
-
-        with torch.no_grad():
-            sr_image = model.predict(image)
-
-        torch.cuda.empty_cache()
-
         orig_path = f"storage/originals/{photo_id}.jpg"
-        res_path = f"storage/results/{photo_id}.jpg"
 
+        # 1. 원본 저장
         with open(orig_path, "wb") as f:
             f.write(best_content)
-        sr_image.save(res_path, format="JPEG")
 
+        # 2. DB 기록
         db_record = PhotoRecord(
             id=photo_id,
             original_path=orig_path,
-            upscaled_path=res_path,
-            is_ai_processed=True,
-            latitude=lat,  # 📍 저장
-            longitude=lng,  # 📍 저장
+            upscaled_path=None,
+            is_ai_processed=False,
+            latitude=lat,
+            longitude=lng,
         )
         db.add(db_record)
         db.commit()
 
-        out_buffer = io.BytesIO()
-        sr_image.save(out_buffer, format="JPEG")
-        return Response(content=out_buffer.getvalue(), media_type="image/jpeg")
+        # 3. 백그라운드 작업 등록
+        background_tasks.add_task(process_image_task, photo_id, orig_path)
+
+        return {
+            "message": "Best cut selected, processing in background",
+            "id": photo_id,
+        }
 
     return {"error": "Processing failed"}
 
@@ -187,9 +206,14 @@ def get_photo_file(
     if not record:
         return Response(status_code=404)
 
+    # 요청한 타입의 경로 확인
     file_path = record.upscaled_path if type == "upscaled" else record.original_path
 
-    if not os.path.exists(file_path):
+    # 만약 업스케일링된 파일이 아직 없으면(처리 중이면) 원본을 대신 줌 (Fallback)
+    if type == "upscaled" and (file_path is None or not os.path.exists(file_path)):
+        file_path = record.original_path
+
+    if not file_path or not os.path.exists(file_path):
         return Response(status_code=404)
 
     with open(file_path, "rb") as f:
