@@ -210,7 +210,7 @@ class _MapScreenState extends State<MapScreen> {
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.95),
                 borderRadius: BorderRadius.circular(32),
-                boxShadow: [kStrongShadow],
+                boxShadow: [kHardShadow],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,

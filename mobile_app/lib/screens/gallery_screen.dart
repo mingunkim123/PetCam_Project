@@ -1,39 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gal/gal.dart';
-import '../services/ai_service.dart';
+import '../providers/riverpod_providers.dart';
 
-class GalleryScreen extends StatefulWidget {
+class GalleryScreen extends ConsumerWidget {
   const GalleryScreen({super.key});
 
   @override
-  State<GalleryScreen> createState() => _GalleryScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final photosAsync = ref.watch(serverPhotosProvider);
 
-class _GalleryScreenState extends State<GalleryScreen> {
-  final AiService _aiService = AiService();
-  late Future<List<dynamic>> _photosFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _photosFuture = _aiService.fetchPhotos();
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("앨범")),
-      body: FutureBuilder<List<dynamic>>(
-        future: _photosFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+      body: photosAsync.when(
+        data: (photos) {
+          if (photos.isEmpty) {
             return const Center(child: Text("아직 찍은 사진이 없어요 📸"));
           }
-
-          final photos = snapshot.data!;
           return GridView.builder(
             padding: const EdgeInsets.all(16),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -45,10 +28,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
             itemCount: photos.length,
             itemBuilder: (context, index) {
               final photo = photos[index];
-              final imageUrl = _aiService.getPhotoUrl(photo['id']);
+              final aiService = ref.read(aiServiceProvider);
+              final imageUrl = aiService.getPhotoUrl(photo['id']);
 
               return GestureDetector(
-                onTap: () => _showPhotoOptions(context, photo),
+                onTap: () => _showPhotoOptions(context, ref, photo),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.network(
@@ -73,19 +57,19 @@ class _GalleryScreenState extends State<GalleryScreen> {
             },
           );
         },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, stack) => Center(child: Text('Error: $err')),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          setState(() {
-            _photosFuture = _aiService.fetchPhotos();
-          });
-        },
+        onPressed: () => ref.refresh(serverPhotosProvider),
         child: const Icon(Icons.refresh),
       ),
     );
   }
 
-  void _showPhotoOptions(BuildContext context, dynamic photo) {
+  void _showPhotoOptions(BuildContext context, WidgetRef ref, dynamic photo) {
+    final aiService = ref.read(aiServiceProvider);
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -98,7 +82,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 top: Radius.circular(16),
               ),
               child: Image.network(
-                _aiService.getPhotoUrl(photo['id']),
+                aiService.getPhotoUrl(photo['id']),
                 fit: BoxFit.cover,
                 height: 250,
                 width: double.infinity,
@@ -117,20 +101,20 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       color: Colors.blue,
                     ),
                     onPressed: () async {
-                      final url = _aiService.getPhotoUrl(photo['id']);
-                      final bytes = await _aiService.downloadPhoto(url);
+                      final url = aiService.getPhotoUrl(photo['id']);
+                      final bytes = await aiService.downloadPhoto(url);
                       if (bytes != null) {
                         try {
                           await Gal.putImageBytes(bytes);
-                          if (mounted) {
+                          if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text("✅ 갤러리에 저장되었습니다!")),
                             );
                             Navigator.pop(context);
                           }
                         } catch (e) {
-                          print(e);
-                          if (mounted) {
+                          debugPrint(e.toString());
+                          if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text("❌ 저장 권한이 필요합니다.")),
                             );
@@ -147,13 +131,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       color: Colors.red,
                     ),
                     onPressed: () async {
-                      bool success = await _aiService.deletePhoto(photo['id']);
+                      bool success = await aiService.deletePhoto(photo['id']);
                       if (success) {
-                        if (mounted) {
+                        if (context.mounted) {
                           Navigator.pop(context);
-                          setState(() {
-                            _photosFuture = _aiService.fetchPhotos();
-                          });
+                          // Refresh the provider
+                          ref.refresh(serverPhotosProvider);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text("🗑️ 사진이 삭제되었습니다.")),
                           );

@@ -1,29 +1,32 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
-import 'package:permission_handler/permission_handler.dart'; // 권한 요청 패키지
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../utils/constants.dart';
-import '../providers/photo_provider.dart';
+import '../providers/riverpod_providers.dart';
 import '../services/ble_service.dart';
 import '../services/ai_service.dart';
-import '../widgets/image_preview_list.dart';
+
 import '../widgets/control_panel.dart';
 import '../widgets/main_drawer.dart';
 import '../widgets/ai_comparison_sheet.dart';
-import '../widgets/empty_photo_state.dart';
+
 import '../widgets/connection_status_badge.dart';
+import '../widgets/summary_card.dart';
+import '../widgets/section_header.dart';
+import '../widgets/pet_profile_card.dart';
+import '../widgets/featured_pet_photo.dart';
 import 'map_screen.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   final BleService _bleService = BleService();
   final AiService _aiService = AiService();
 
@@ -34,29 +37,18 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _requestPermissions(); // 1. 권한 요청 먼저 실행
-
-    // BLE 연결 상태 감시
+    _requestPermissions();
     _bleService.onConnectionChanged = (connected) {
       if (mounted) setState(() => _isConnected = connected);
     };
-
-    // BLE로 사진 수신 시 Provider에 저장
     _bleService.onImageReceived = (Uint8List img) {
-      if (mounted) {
-        context.read<PhotoProvider>().addPhoto(img);
-      }
+      if (mounted) ref.read(photoProvider.notifier).addPhoto(img);
     };
-
-    // 📸 미리보기 수신 시 다이얼로그 표시
     _bleService.onPreviewReceived = (Uint8List img) {
-      if (mounted) {
-        _showPreviewDialog(img);
-      }
+      if (mounted) _showPreviewDialog(img);
     };
   }
 
-  // 권한 요청 함수
   Future<void> _requestPermissions() async {
     Map<Permission, PermissionStatus> statuses = await [
       Permission.location,
@@ -73,20 +65,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // AI 업스케일링 처리 로직
   Future<void> _handleAiUpscale(String photoId, Uint8List original) async {
     setState(() => _isProcessing = true);
-
     try {
       final upscaled = await _aiService.upscaleImage(original);
-
       if (upscaled != null && mounted) {
-        context.read<PhotoProvider>().updateUpscaledPhoto(photoId, upscaled);
+        ref.read(photoProvider.notifier).updateUpscaledPhoto(photoId, upscaled);
         AiComparisonSheet.show(context, original, upscaled);
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("❌ AI 서버 응답이 없습니다. 서버 상태를 확인하세요.")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("❌ AI 서버 응답이 없습니다.")));
       }
     } catch (e) {
       if (mounted) {
@@ -101,146 +90,175 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final photoProvider = context.watch<PhotoProvider>();
-    final photos = photoProvider.photos;
+    final photos = ref.watch(photoProvider);
 
     return Scaffold(
-      backgroundColor: kBgColor,
+      backgroundColor: kAppBackground,
       drawer: const MainDrawer(),
       body: Stack(
         children: [
-          // 1. Background Gradient (Subtle)
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [kSecondaryColor.withOpacity(0.05), kBgColor],
+          CustomScrollView(
+            slivers: [
+              // 1. Large Header with Pet Profile
+              SliverAppBar(
+                expandedHeight: 180.0, // Increased height for profile card
+                floating: false,
+                pinned: true,
+                backgroundColor: kAppBackground,
+                elevation: 0,
+                flexibleSpace: FlexibleSpaceBar(
+                  background: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: const PetProfileCard(),
+                    ),
+                  ),
+                ),
+                actions: [
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      right: 20,
+                      bottom: 100,
+                    ), // Adjust position
+                    child: ConnectionStatusBadge(
+                      isConnected: _isConnected,
+                      onTap: () => _bleService.connectToDevice(),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
 
-          // 2. Custom App Bar & Content
-          SafeArea(
-            child: Column(
-              children: [
-                // Custom Header
-                Padding(
+              // 2. Summary Grid (Bento Style)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverGrid.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.5,
+                  children: [
+                    SummaryCard(
+                      title: "Photos",
+                      value: "${photos.length}",
+                      unit: "shots",
+                      icon: Icons.photo_library_rounded,
+                      iconColor: kSecondaryColor,
+                      onTap: () => Navigator.pushNamed(context, '/gallery'),
+                    ),
+                    SummaryCard(
+                      title: "Status",
+                      value: _isConnected ? "On" : "Off",
+                      unit: "line",
+                      icon: _isConnected
+                          ? Icons.bluetooth_connected
+                          : Icons.bluetooth_disabled,
+                      iconColor: _isConnected ? kSuccessColor : kTextSecondary,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+              // 3. Featured Pet Photo (Replaces Recent Shots)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  child: Column(
+                    children: [
+                      const SectionHeader(title: "My Pet"),
+                      const FeaturedPetPhoto(),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 4. Gallery Link (New)
+              SliverToBoxAdapter(
+                child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
                     vertical: 10,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Builder(
-                        builder: (context) => IconButton(
-                          icon: const Icon(
-                            Icons.menu_rounded,
-                            size: 28,
-                            color: kPrimaryColor,
-                          ),
-                          onPressed: () => Scaffold.of(context).openDrawer(),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/gallery');
+                    },
+                    icon: const Icon(Icons.photo_library_rounded),
+                    label: const Text("View Recent Shots in Gallery"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kCardBackground,
+                      foregroundColor: kPrimaryColor,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(kBorderRadiusM),
+                        side: BorderSide(
+                          color: kSecondaryColor.withOpacity(0.1),
                         ),
                       ),
-                      const Text(
-                        "PetCam AI",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: kPrimaryColor,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      ConnectionStatusBadge(
-                        isConnected: _isConnected,
-                        onTap: () => _bleService.connectToDevice(),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
+              ),
 
-                if (_isProcessing)
-                  const LinearProgressIndicator(
-                    color: kSecondaryColor,
-                    backgroundColor: Colors.transparent,
-                  ),
+              // Space for Control Panel
+              const SliverToBoxAdapter(child: SizedBox(height: 120)),
+            ],
+          ),
 
-                // Main Content
-                Expanded(
-                  child: photos.isEmpty
-                      ? const EmptyPhotoState()
-                      : ImagePreviewList(
-                          photos: photos,
-                          recommendedIndex: _confirmedIndex,
-                          confirmedIndex: _confirmedIndex,
-                          onSelect: (idx) =>
-                              setState(() => _confirmedIndex = idx),
-                          onAiUpscale: (idx) => _handleAiUpscale(
-                            photos[idx].id,
-                            photos[idx].originalBytes,
-                          ),
-                        ),
-                ),
-
-                // Bottom Control Panel (Unified Dock)
-                ControlPanel(
-                  isConnected: _isConnected,
-                  isProcessing: _isProcessing,
-                  onSnap: () => _bleService.sendSnapCommand(),
-                  onBurst: _handleBurstCapture,
-                  onWalk: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const MapScreen(),
-                      ),
-                    );
-                  },
-                  // 미리보기 버튼 추가
-                  onPreview: () {
-                    if (!_isConnected) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("⚠️ 기기가 연결되지 않았습니다.")),
-                      );
-                      return;
-                    }
-                    // 중복 요청 방지
-                    if (_isProcessing) return;
-
-                    setState(() {
-                      _isProcessing = true; // 로딩 시작
-                    });
-
-                    _bleService.sendPreviewCommand();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("📸 미리보기 요청 중...")),
-                    );
-
-                    // ⏳ 5초 타임아웃 (응답 없으면 로딩 해제)
-                    Future.delayed(const Duration(seconds: 5), () {
-                      if (mounted && _isProcessing) {
-                        setState(() {
-                          _isProcessing = false;
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("❌ 응답이 없습니다. (카메라 점검 필요)"),
-                          ),
-                        );
-                      }
-                    });
-                  },
-                ),
-              ],
+          // 5. Floating Control Panel
+          Positioned(
+            bottom: 30,
+            left: 0,
+            right: 0,
+            child: ControlPanel(
+              isConnected: _isConnected,
+              isProcessing: _isProcessing,
+              onSnap: () => _bleService.sendSnapCommand(),
+              onBurst: _handleBurstCapture,
+              onWalk: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MapScreen()),
+              ),
+              onPreview: _handlePreview,
             ),
           ),
+
+          if (_isProcessing)
+            Container(
+              color: Colors.black45,
+              child: const Center(
+                child: CircularProgressIndicator(color: kSecondaryColor),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  // Burst 모드 핸들러 (시각적 피드백 추가)
+  void _handlePreview() {
+    if (!_isConnected) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("⚠️ 기기가 연결되지 않았습니다.")));
+      return;
+    }
+    if (_isProcessing) return;
+
+    setState(() => _isProcessing = true);
+    _bleService.sendPreviewCommand();
+
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted && _isProcessing) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("❌ 응답이 없습니다.")));
+      }
+    });
+  }
+
   void _handleBurstCapture() {
     if (!_isConnected) {
       ScaffoldMessenger.of(
@@ -248,11 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ).showSnackBar(const SnackBar(content: Text("⚠️ 기기가 연결되지 않았습니다.")));
       return;
     }
-
-    // 1. 명령 전송
     _bleService.sendBurstCommand();
-
-    // 2. 진행 상태 다이얼로그 표시
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -261,10 +275,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showPreviewDialog(Uint8List imageBytes) {
-    setState(() {
-      _isProcessing = false; // 로딩 끝
-    });
-
+    setState(() => _isProcessing = false);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -288,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// Burst 진행 상태 표시 다이얼로그
+// BurstProgressDialog remains the same...
 class BurstProgressDialog extends StatefulWidget {
   const BurstProgressDialog({super.key});
 
@@ -306,32 +317,18 @@ class _BurstProgressDialogState extends State<BurstProgressDialog> {
   }
 
   void _startSimulation() async {
-    // 1. 촬영 시뮬레이션 (0.3s 간격 * 10장) - 실제 펌웨어 속도에 맞춤
     for (int i = 1; i <= 10; i++) {
       if (!mounted) return;
-      setState(() {
-        _status = "📸 연속 촬영 중... ($i/10)";
-      });
-      await Future.delayed(const Duration(milliseconds: 300)); // 10장이니 조금 더 빠르게
+      setState(() => _status = "📸 연속 촬영 중... ($i/10)");
+      await Future.delayed(const Duration(milliseconds: 300));
     }
-
-    // 2. 베스트 컷 분석
     if (!mounted) return;
-    setState(() {
-      _status = "🧠 AI 베스트 컷 분석 중...";
-    });
+    setState(() => _status = "🧠 AI 베스트 컷 분석 중...");
     await Future.delayed(const Duration(seconds: 2));
-
-    // 3. 완료
     if (!mounted) return;
-    setState(() {
-      _status = "✨ 업스케일링 완료!\n(Wi-Fi 동기화 대기 중)";
-    });
+    setState(() => _status = "✨ 업스케일링 완료!\n(Wi-Fi 동기화 대기 중)");
     await Future.delayed(const Duration(seconds: 2));
-
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override

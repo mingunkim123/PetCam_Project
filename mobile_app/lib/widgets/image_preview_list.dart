@@ -56,16 +56,13 @@ class _ImagePreviewListState extends State<ImagePreviewList> {
 
         // Animation scale
         double scale = isActive ? 1.0 : 0.9;
-        
+
         return TweenAnimationBuilder(
           tween: Tween(begin: scale, end: scale),
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutBack,
           builder: (context, double value, child) {
-            return Transform.scale(
-              scale: value,
-              child: child,
-            );
+            return Transform.scale(scale: value, child: child);
           },
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -77,8 +74,8 @@ class _ImagePreviewListState extends State<ImagePreviewList> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(32),
                     boxShadow: [
-                      isActive ? kStrongShadow : kSoftShadow,
-                      if (isConf) 
+                      isActive ? kHardShadow : kSoftShadow,
+                      if (isConf)
                         BoxShadow(
                           color: kSecondaryColor.withOpacity(0.4),
                           blurRadius: 20,
@@ -91,10 +88,7 @@ class _ImagePreviewListState extends State<ImagePreviewList> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.memory(
-                          photo.originalBytes,
-                          fit: BoxFit.cover,
-                        ),
+                        Image.memory(photo.originalBytes, fit: BoxFit.cover),
                         // Gradient Overlay
                         Container(
                           decoration: BoxDecoration(
@@ -110,14 +104,14 @@ class _ImagePreviewListState extends State<ImagePreviewList> {
                         ),
                         // Badges
                         if (isRec) _buildBadge("✨ AI BEST", kAccentColor),
-                        if (photo.isAiProcessed) 
+                        if (photo.isAiProcessed)
                           _buildBadge("✅ UPSCALED", Colors.greenAccent),
                       ],
                     ),
                   ),
                 ),
               ),
-              
+
               // Action Button
               SizedBox(
                 height: 60,
@@ -135,7 +129,10 @@ class _ImagePreviewListState extends State<ImagePreviewList> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: kPrimaryColor,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
@@ -164,7 +161,11 @@ class _ImagePreviewListState extends State<ImagePreviewList> {
           color: color,
           borderRadius: BorderRadius.circular(20),
           boxShadow: const [
-            BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 8,
+              offset: Offset(0, 4),
+            ),
           ],
         ),
         child: Text(

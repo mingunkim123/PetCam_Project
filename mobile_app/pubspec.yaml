@@ -45,6 +45,9 @@ dependencies:
   # GPS와 블루투스 권한을 더 확실하게 제어할 수 있습니다. [cite: 2025-08-13]
   permission_handler: ^11.3.1
   google_fonts: ^6.3.3
+  shared_preferences: ^2.5.4
+  image_picker: ^1.2.1
+  flutter_riverpod: ^3.2.0
   
 
 dev_dependencies:

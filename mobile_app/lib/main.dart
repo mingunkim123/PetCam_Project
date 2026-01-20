@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // 💡 사장님의 파일 경로에 맞춰 임포트 (경로가 다르면 수정하세요)
-import 'package:google_fonts/google_fonts.dart';
-import 'screens/gallery_screen.dart';
+
 import 'screens/home_screen.dart';
 import 'screens/map_screen.dart';
-import 'providers/photo_provider.dart';
+import 'screens/gallery_screen.dart';
 import 'utils/constants.dart';
 
 void main() async {
@@ -21,12 +20,7 @@ void main() async {
   );
 
   // 3. Provider와 함께 앱 실행
-  runApp(
-    MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => PhotoProvider())],
-      child: const MyApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 // 💡 에러 원인 해결: MyApp 클래스 정의 추가
@@ -40,14 +34,15 @@ class MyApp extends StatelessWidget {
       title: 'PetCam AI',
       theme: ThemeData(
         primaryColor: kPrimaryColor,
-        scaffoldBackgroundColor: kBgColor,
+        scaffoldBackgroundColor: kAppBackground,
         useMaterial3: true,
-        textTheme: GoogleFonts.poppinsTextTheme(Theme.of(context).textTheme),
+        textTheme: kAppTextTheme(Theme.of(context).textTheme),
         colorScheme: ColorScheme.fromSeed(
           seedColor: kSecondaryColor,
           primary: kPrimaryColor,
           secondary: kSecondaryColor,
-          surface: kSurfaceColor,
+          surface: kCardBackground,
+          error: kErrorColor,
         ),
       ),
       home: const HomeScreen(),
