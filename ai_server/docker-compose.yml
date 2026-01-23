@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: petcam_server
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8000}
+    depends_on:
+      - db
+    volumes:
+      - ./storage:/app/storage
+
+  db:
+    image: postgres:15
+    container_name: petcam_db
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-petuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-petpassword}
+      - POSTGRES_DB=${POSTGRES_DB:-petdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:

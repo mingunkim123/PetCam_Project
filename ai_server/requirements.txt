@@ -7,6 +7,11 @@ numpy
 RealESRGAN
 pydantic-settings
 psycopg2-binary
+asyncpg
+greenlet
 torch
 torchvision
 python-multipart
+python-dotenv
+alembic
+gunicorn
