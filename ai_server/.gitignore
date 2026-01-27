@@ -34,3 +34,18 @@ storage/
 test.jpg
 BasicSR/datasets/
 BasicSR/experiments/
+
+# ============================================================
+# 환경변수 파일 (중요: Git에 절대 올리면 안 됨!)
+# ============================================================
+# .env.example과 .env.production.example은 Git에 올려도 됨 (예시 파일)
+# 실제 비밀번호가 들어있는 파일은 반드시 제외!
+.env
+.env.local
+.env.production
+.env.development
+!.env.example
+!.env.production.example
+
+# SSL 인증서
+nginx/ssl/
