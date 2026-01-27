@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/constants.dart';
@@ -17,6 +18,7 @@ class FeaturedPetPhoto extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
+        HapticFeedback.lightImpact();
         showModalBottomSheet(
           context: context,
           isScrollControlled: true,
@@ -24,60 +26,130 @@ class FeaturedPetPhoto extends ConsumerWidget {
           builder: (context) => AiComparisonSheet(photo: recentPhoto),
         );
       },
-      child: Container(
-        height: 200,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [kSoftShadow],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.memory(
-                recentPhoto.upscaledBytes ?? recentPhoto.originalBytes,
-                fit: BoxFit.cover,
-              ),
-              // Gradient Overlay
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  height: 80,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.6),
+      child: Hero(
+        tag: 'featured_photo',
+        child: Container(
+          height: 220,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(kRadiusXXL),
+            boxShadow: [kShadowL],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(kRadiusXXL),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Image
+                Image.memory(
+                  recentPhoto.upscaledBytes ?? recentPhoto.originalBytes,
+                  fit: BoxFit.cover,
+                ),
+
+                // Gradient Overlay
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.7),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // AI Badge
+                Positioned(
+                  top: kSpaceM,
+                  left: kSpaceM,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: kSpaceM,
+                      vertical: kSpaceXS,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(kRadiusFull),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.2),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.auto_awesome_rounded,
+                          size: 14,
+                          color: kAccentOrange,
+                        ),
+                        const SizedBox(width: kSpaceXS),
+                        const Text(
+                          'AI Enhanced',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
-              ),
 
-              // Edit Icon
-              Positioned(
-                bottom: 16,
-                right: 16,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.camera_alt_rounded,
-                    color: Colors.white,
-                    size: 20,
+                // Bottom Info
+                Positioned(
+                  bottom: kSpaceL,
+                  left: kSpaceL,
+                  right: kSpaceL,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '최근 촬영',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                          const Text(
+                            '탭하여 AI 분석 보기',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(kSpaceM),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.3),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -85,6 +157,7 @@ class FeaturedPetPhoto extends ConsumerWidget {
   }
 
   Future<void> _pickImage(WidgetRef ref) async {
+    HapticFeedback.selectionClick();
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
@@ -98,30 +171,47 @@ class FeaturedPetPhoto extends ConsumerWidget {
     return GestureDetector(
       onTap: () => _pickImage(ref),
       child: Container(
-        height: 200,
+        height: 220,
         width: double.infinity,
         decoration: BoxDecoration(
           color: kCardBackground,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(kRadiusXXL),
           border: Border.all(
-            color: kSecondaryColor.withValues(alpha: 0.2),
+            color: kSecondaryColor.withOpacity(0.2),
             width: 2,
+            strokeAlign: BorderSide.strokeAlignInside,
           ),
+          boxShadow: [kShadowXS],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.add_photo_alternate_rounded,
-              size: 48,
-              color: kTextTertiary,
+            Container(
+              padding: const EdgeInsets.all(kSpaceL),
+              decoration: BoxDecoration(
+                color: kSecondaryColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.add_photo_alternate_rounded,
+                size: 40,
+                color: kSecondaryColor,
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: kSpaceL),
             Text(
-              "Tap to add a featured photo",
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: kTextSecondary),
+              "첫 번째 사진을 추가하세요",
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: kTextPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: kSpaceXS),
+            Text(
+              "탭하여 갤러리에서 선택",
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: kTextTertiary,
+              ),
             ),
           ],
         ),

@@ -5,19 +5,30 @@ import 'package:http_parser/http_parser.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
+import 'auth_service.dart';
 
 class AiService {
+  final AuthService _authService = AuthService();
+
   // 환경 변수에서 API URL 로드 (없으면 기본값 사용 - 개발 편의성)
   static String get baseUrl =>
       dotenv.env['API_URL'] ?? "http://172.24.112.37:8000";
 
-  // 1장 업스케일링 요청 (JSON 응답 -> 이미지 다운로드)
+  /// 인증 헤더 포함한 HTTP 헤더 생성
+  Future<Map<String, String>> _getHeaders() async {
+    return await _authService.getAuthHeaders();
+  }
+
   Future<Uint8List?> upscaleImage(Uint8List imageBytes) async {
     try {
+      // 인증 헤더 추가
+      final headers = await _getHeaders();
+      
       var request = http.MultipartRequest(
         'POST',
         Uri.parse("$baseUrl/upscale"),
       );
+      request.headers.addAll(headers);
       request.files.add(
         http.MultipartFile.fromBytes(
           'file',
@@ -55,10 +66,14 @@ class AiService {
   // 3장 중 베스트 컷 선별 + 업스케일링
   Future<Uint8List?> getBestCut(List<Uint8List> images) async {
     try {
+      // 인증 헤더 추가
+      final headers = await _getHeaders();
+      
       var request = http.MultipartRequest(
         'POST',
         Uri.parse("$baseUrl/bestcut"),
       );
+      request.headers.addAll(headers);
       for (int i = 0; i < images.length; i++) {
         request.files.add(
           http.MultipartFile.fromBytes(
@@ -92,11 +107,15 @@ class AiService {
   // 사진 목록 가져오기 (Pagination)
   Future<List<dynamic>> fetchPhotos({int skip = 0, int limit = 100}) async {
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse("$baseUrl/photos?skip=$skip&limit=$limit"),
+        headers: headers,
       );
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
+      } else if (response.statusCode == 401) {
+        debugPrint("❌ 인증 실패: 로그인이 필요합니다.");
       }
     } catch (e) {
       print("❌ 사진 목록 로드 실패: $e");
@@ -112,7 +131,11 @@ class AiService {
   // 사진 삭제
   Future<bool> deletePhoto(String photoId) async {
     try {
-      final response = await http.delete(Uri.parse("$baseUrl/photos/$photoId"));
+      final headers = await _getHeaders();
+      final response = await http.delete(
+        Uri.parse("$baseUrl/photos/$photoId"),
+        headers: headers,
+      );
       return response.statusCode == 200;
     } catch (e) {
       print("❌ 삭제 실패: $e");
@@ -123,9 +146,12 @@ class AiService {
   // 사진 다운로드 (URL -> Bytes)
   Future<Uint8List?> downloadPhoto(String url) async {
     try {
-      final response = await http.get(Uri.parse(url));
+      final headers = await _getHeaders();
+      final response = await http.get(Uri.parse(url), headers: headers);
       if (response.statusCode == 200) {
         return response.bodyBytes;
+      } else if (response.statusCode == 401) {
+        debugPrint("❌ 인증 실패: 로그인이 필요합니다.");
       }
       return null;
     } catch (e) {

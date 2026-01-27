@@ -6,26 +6,34 @@ services:
     container_name: petcam_server
     ports:
       - "8000:8000"
+    restart: always
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
       - HOST=${HOST:-0.0.0.0}
       - PORT=${PORT:-8000}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
     depends_on:
       - db
     volumes:
       - ./storage:/app/storage
+      - .:/app  # 💡 코드 핫리로드용 (개발 환경)
+    # 💡 핫리로드: 코드 수정 시 자동 반영 (--reload)
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   db:
     image: postgres:15
     container_name: petcam_db
+
+    restart: always
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-petuser}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-petpassword}
-      - POSTGRES_DB=${POSTGRES_DB:-petdb}
+      - POSTGRES_USER=${POSTGRES_USER:?POSTGRES_USER is required}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_DB=${POSTGRES_DB:?POSTGRES_DB is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"  # 외부 5433 → 내부 5432 (로컬 PostgreSQL과 충돌 방지)
 
 volumes:
   postgres_data:

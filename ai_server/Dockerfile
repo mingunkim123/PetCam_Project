@@ -2,11 +2,12 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# 시스템 의존성 설치 (OpenCV, PostgreSQL 드라이버 등)
+# 시스템 의존성 설치 (OpenCV, PostgreSQL 드라이버, bcrypt 등)
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libpq-dev \
+    libffi-dev \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 

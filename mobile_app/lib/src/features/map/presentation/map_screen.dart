@@ -1,10 +1,18 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../core/constants/constants.dart';
 import '../../gallery/data/gallery_repository.dart';
+import '../../../services/heart_rate_service.dart';
+import 'package:uuid/uuid.dart';
+import '../data/walk_repository.dart';
+import '../domain/walk_point.dart';
+import '../domain/walk_session.dart';
+import 'walk_history_screen.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -13,98 +21,264 @@ class MapScreen extends ConsumerStatefulWidget {
   ConsumerState<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends ConsumerState<MapScreen> {
-  // 1. 상태 변수 및 컨트롤러
+class _MapScreenState extends ConsumerState<MapScreen>
+    with SingleTickerProviderStateMixin {
   NaverMapController? _mapController;
   StreamSubscription<Position>? _positionStream;
-  List<NLatLng> _pathPoints = []; // 산책 경로 좌표 리스트
-  bool _isWalking = false; // 산책 중 상태 플래그
-  bool _showHappyCourse = true; // 행복 산책 코스 표시 여부
+  StreamSubscription<HeartRateData>? _heartRateStream;
+
+  final List<NLatLng> _pathPoints = [];
+  final List<WalkPoint> _walkData = [];
+
+  bool _isWalking = false;
+  bool _showHappyCourse = true;
+
+  int _currentBpm = 0;
+  DateTime? _startTime;
+
+  late AnimationController _animationController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+  }
 
   @override
   void dispose() {
-    // 💡 메모리 누수 방지를 위해 스트림 해제 (전기전자 전공자라면 필수 리소스 관리!)
     _positionStream?.cancel();
+    _heartRateStream?.cancel();
+    _animationController.dispose();
     super.dispose();
   }
 
-  // 2. 위치 권한 확인 및 산책 시작/종료 로직
   Future<void> _toggleWalking() async {
+    HapticFeedback.mediumImpact();
+
     if (_isWalking) {
-      // 산책 종료 로직
-      await _positionStream?.cancel();
-      setState(() {
-        _isWalking = false;
-      });
-      print("🏁 산책 종료. 총 이동 데이터 포인트: ${_pathPoints.length}");
+      await _stopWalking();
     } else {
-      // 산책 시작 전 권한 체크
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      setState(() {
-        _isWalking = true;
-        _pathPoints.clear(); // 새 산책 시작 시 이전 경로 초기화
-      });
-
-      // 실시간 위치 추적 시작 (5m 이동 시마다 업데이트)
-      _positionStream =
-          Geolocator.getPositionStream(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              distanceFilter: 5,
-            ),
-          ).listen((Position position) {
-            _updatePath(position);
-          });
+      await _startWalking();
     }
   }
 
-  // 3. 지도 위에 실시간으로 경로 그리기
+  Future<void> _startWalking() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        _showPermissionDeniedSnackBar();
+        return;
+      }
+    }
+
+    setState(() {
+      _isWalking = true;
+      _pathPoints.clear();
+      _walkData.clear();
+      _startTime = DateTime.now();
+    });
+
+    _animationController.repeat(reverse: true);
+
+    await ref.read(walkRepositoryProvider).saveWalkData([], [], true);
+
+    final heartRateService = ref.read(heartRateServiceProvider);
+    _heartRateStream = heartRateService.heartRateStream.listen((data) {
+      setState(() => _currentBpm = data.bpm);
+    });
+
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    ).listen((Position position) {
+      _updatePath(position);
+    });
+  }
+
+  Future<void> _stopWalking() async {
+    await _positionStream?.cancel();
+    await _heartRateStream?.cancel();
+    _animationController.stop();
+    _animationController.reset();
+
+    setState(() => _isWalking = false);
+
+    _analyzeBestSpot();
+
+    if (_pathPoints.isNotEmpty) {
+      final session = WalkSession(
+        id: const Uuid().v4(),
+        startTime: _startTime ?? DateTime.now(),
+        endTime: DateTime.now(),
+        pathPoints: List.from(_pathPoints),
+        walkData: List.from(_walkData),
+        maxBpm: _walkData.isEmpty
+            ? 0
+            : _walkData.map((e) => e.bpm).reduce(max),
+      );
+      await ref.read(walkRepositoryProvider).saveWalkSession(session);
+    }
+
+    await ref.read(walkRepositoryProvider).clearWalkData();
+    _startTime = null;
+  }
+
   void _updatePath(Position position) {
     final newPoint = NLatLng(position.latitude, position.longitude);
 
     setState(() {
       _pathPoints.add(newPoint);
+      _walkData.add(
+        WalkPoint(
+          location: newPoint,
+          bpm: _currentBpm,
+          timestamp: DateTime.now(),
+        ),
+      );
     });
 
-    // 지도 위에 폴리라인(산책로) 오버레이 추가
+    ref
+        .read(walkRepositoryProvider)
+        .saveWalkData(_walkData, _pathPoints, _isWalking);
+
     if (_pathPoints.length >= 2) {
       final polyline = NPolylineOverlay(
         id: "walking_route",
         coords: _pathPoints,
-        color: Colors.blueAccent,
-        width: 5,
+        color: kSecondaryColor,
+        width: 6,
       );
       _mapController?.addOverlay(polyline);
     }
 
-    // 카메라를 현재 위치로 부드럽게 이동
     _mapController?.updateCamera(
-      NCameraUpdate.withParams(
-        target: newPoint,
-        bearing: position.heading, // 진행 방향으로 지도 회전 (Head-up 모드)
+      NCameraUpdate.withParams(target: newPoint, bearing: position.heading),
+    );
+  }
+
+  void _analyzeBestSpot() {
+    if (_walkData.isEmpty) return;
+
+    WalkPoint bestPoint = _walkData.reduce(
+      (curr, next) => curr.bpm > next.bpm ? curr : next,
+    );
+
+    final marker = NMarker(
+      id: "best_spot_marker",
+      position: bestPoint.location,
+      caption: NOverlayCaption(text: "최고의 순간!"),
+      subCaption: NOverlayCaption(text: "${bestPoint.bpm} BPM"),
+    );
+    _mapController?.addOverlay(marker);
+
+    _mapController?.updateCamera(
+      NCameraUpdate.scrollAndZoomTo(target: bestPoint.location, zoom: 17),
+    );
+
+    if (mounted) {
+      _showBestSpotDialog(bestPoint);
+    }
+  }
+
+  void _showBestSpotDialog(WalkPoint bestPoint) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(kSpaceXXL),
+          decoration: kCardDecoration(borderRadius: kRadiusXXL),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(kSpaceL),
+                decoration: BoxDecoration(
+                  gradient: kSunsetGradient,
+                  shape: BoxShape.circle,
+                  boxShadow: [kColoredShadow(kAccentOrange, opacity: 0.4)],
+                ),
+                child: const Icon(
+                  Icons.emoji_events_rounded,
+                  size: 40,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: kSpaceXXL),
+              Text(
+                "오늘의 베스트 스팟!",
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: kSpaceM),
+              Text(
+                "이곳에서 반려동물이 가장 신났어요",
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: kSpaceXL),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kSpaceXXL,
+                  vertical: kSpaceL,
+                ),
+                decoration: BoxDecoration(
+                  color: kAccentColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(kRadiusFull),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.favorite_rounded,
+                      color: kAccentColor,
+                      size: 24,
+                    ),
+                    const SizedBox(width: kSpaceS),
+                    Text(
+                      "${bestPoint.bpm} BPM",
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: kAccentColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: kSpaceXXL),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("확인"),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  // 📸 4. 사진 마커 로드 함수 (추가)
   Future<void> _loadPhotoMarkers() async {
     if (_mapController == null) return;
 
     final repository = ref.read(galleryRepositoryProvider);
     final photos = await repository.fetchPhotos();
-    print("📍 지도에 표시할 사진 수: ${photos.length}");
 
     for (var photo in photos) {
-      // lat, lng가 있는지 확인 (서버에서 null일 수 있음)
       if (photo['latitude'] != null && photo['longitude'] != null) {
         double lat = photo['latitude'];
         double lng = photo['longitude'];
-
-        // 0.0, 0.0은 유효하지 않은 좌표로 간주
         if (lat == 0.0 && lng == 0.0) continue;
 
         final marker = NMarker(
@@ -113,7 +287,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           icon: const NOverlayImage.fromAssetImage("assets/marker_icon.png"),
         );
 
-        // 마커 클릭 리스너
         marker.setOnTapListener((overlay) {
           _showPhotoDialog(photo);
         });
@@ -122,7 +295,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       }
     }
 
-    // 💡 행복 산책 코스 (사진들을 연결한 경로) 그리기
     if (photos.isNotEmpty && _showHappyCourse) {
       List<NLatLng> photoPoints = [];
       for (var photo in photos) {
@@ -139,7 +311,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         final happyRoute = NPolylineOverlay(
           id: "happy_walk_course",
           coords: photoPoints,
-          color: Colors.pinkAccent.withOpacity(0.7),
+          color: kAccentPink.withOpacity(0.7),
           width: 8,
         );
         _mapController?.addOverlay(happyRoute);
@@ -148,11 +320,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   void _toggleHappyCourse() {
-    setState(() {
-      _showHappyCourse = !_showHappyCourse;
-    });
+    HapticFeedback.lightImpact();
+    setState(() => _showHappyCourse = !_showHappyCourse);
+
     if (_showHappyCourse) {
-      _loadPhotoMarkers(); // 다시 로드 (오버레이 추가)
+      _loadPhotoMarkers();
     } else {
       _mapController?.deleteOverlay(
         const NOverlayInfo(
@@ -163,174 +335,449 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
   }
 
-  // 🖼️ 사진 보기 다이얼로그
+  Future<void> _loadWalkData() async {
+    final repository = ref.read(walkRepositoryProvider);
+    final data = await repository.loadWalkData();
+
+    final bool isWalking = data['isWalking'];
+    final List<WalkPoint> walkData = data['walkData'];
+    final List<NLatLng> pathPoints = data['pathPoints'];
+
+    if (isWalking || pathPoints.isNotEmpty) {
+      setState(() {
+        _isWalking = isWalking;
+        _walkData.addAll(walkData);
+        _pathPoints.addAll(pathPoints);
+      });
+
+      if (_pathPoints.length >= 2) {
+        final polyline = NPolylineOverlay(
+          id: "walking_route",
+          coords: _pathPoints,
+          color: kSecondaryColor,
+          width: 6,
+        );
+        _mapController?.addOverlay(polyline);
+      }
+
+      if (_isWalking) {
+        _animationController.repeat(reverse: true);
+        _resumeWalking();
+      }
+    }
+  }
+
+  Future<void> _resumeWalking() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      return;
+    }
+
+    final heartRateService = ref.read(heartRateServiceProvider);
+    _heartRateStream = heartRateService.heartRateStream.listen((data) {
+      setState(() => _currentBpm = data.bpm);
+    });
+
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    ).listen((Position position) {
+      _updatePath(position);
+    });
+  }
+
   void _showPhotoDialog(dynamic photo) {
     final repository = ref.read(galleryRepositoryProvider);
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        contentPadding: EdgeInsets.zero,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                repository.getPhotoUrl(photo['id']),
-                fit: BoxFit.cover,
-                height: 300,
-                width: double.infinity,
-                loadingBuilder: (ctx, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return const SizedBox(
-                    height: 300,
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                },
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 400),
+          decoration: kCardDecoration(borderRadius: kRadiusXXL),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(kRadiusXXL),
+                ),
+                child: Image.network(
+                  repository.getPhotoUrl(photo['id']),
+                  fit: BoxFit.cover,
+                  height: 300,
+                  width: double.infinity,
+                  loadingBuilder: (ctx, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return SizedBox(
+                      height: 300,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: kSecondaryColor,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("닫기"),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.all(kSpaceL),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("닫기"),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _showPermissionDeniedSnackBar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('위치 권한이 필요합니다'),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: '설정',
+          onPressed: () => Geolocator.openAppSettings(),
+        ),
+      ),
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  double _calculateDistance() {
+    if (_pathPoints.length < 2) return 0;
+    double total = 0;
+    for (int i = 0; i < _pathPoints.length - 1; i++) {
+      total += Geolocator.distanceBetween(
+        _pathPoints[i].latitude,
+        _pathPoints[i].longitude,
+        _pathPoints[i + 1].latitude,
+        _pathPoints[i + 1].longitude,
+      );
+    }
+    return total / 1000; // km
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text(
-          "Walking Map",
-          style: TextStyle(fontWeight: FontWeight.w700, color: kPrimaryColor),
-        ),
-        backgroundColor: Colors.white.withOpacity(0.8),
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: kPrimaryColor,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _showHappyCourse ? Icons.favorite : Icons.favorite_border,
-              color: Colors.pinkAccent,
-            ),
-            onPressed: _toggleHappyCourse,
-            tooltip: "행복 산책 코스 보기",
-          ),
-        ],
-      ),
       body: Stack(
         children: [
-          // 💡 네이버 지도 본체
+          // Map
           NaverMap(
             options: const NaverMapViewOptions(
-              locationButtonEnable: true, // 내 위치 찾기 버튼 활성화
+              locationButtonEnable: true,
               initialCameraPosition: NCameraPosition(
-                target: NLatLng(37.5665, 126.9780), // 초기값 서울시청
+                target: NLatLng(37.5665, 126.9780),
                 zoom: 15,
               ),
             ),
             onMapReady: (controller) {
               _mapController = controller;
-              _loadPhotoMarkers(); // 📍 지도 준비되면 마커 로드
+              _loadPhotoMarkers();
+              _loadWalkData();
             },
           ),
 
-          // 💡 하단 산책 제어 카드 (Floating Glass)
+          // Top Bar
           Positioned(
-            bottom: 40,
-            left: 20,
-            right: 20,
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.95),
-                borderRadius: BorderRadius.circular(32),
-                boxShadow: [kHardShadow],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _isWalking
-                            ? Icons.directions_run_rounded
-                            : Icons.pets_rounded,
-                        color: _isWalking ? kAccentColor : kSecondaryColor,
-                        size: 28,
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(kSpaceL),
+                child: Row(
+                  children: [
+                    // Title Card
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: kSpaceL,
+                          vertical: kSpaceM,
+                        ),
+                        decoration: kGlassDecoration(opacity: 0.9),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(kSpaceS),
+                              decoration: BoxDecoration(
+                                gradient: _isWalking
+                                    ? kAccentGradient
+                                    : kPrimaryGradient,
+                                borderRadius: BorderRadius.circular(kRadiusS),
+                              ),
+                              child: Icon(
+                                _isWalking
+                                    ? Icons.directions_run_rounded
+                                    : Icons.map_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: kSpaceM),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _isWalking ? '산책 중' : '산책 지도',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                  if (_isWalking)
+                                    Text(
+                                      '${_currentBpm} BPM',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: kAccentColor,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 10),
+                    ),
+                    const SizedBox(width: kSpaceM),
+                    // Action Buttons
+                    _buildTopButton(
+                      icon: _showHappyCourse
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: kAccentPink,
+                      onTap: _toggleHappyCourse,
+                    ),
+                    const SizedBox(width: kSpaceS),
+                    _buildTopButton(
+                      icon: Icons.history_rounded,
+                      color: kSecondaryColor,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const WalkHistoryScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom Control Panel
+          Positioned(
+            bottom: 100, // Above bottom nav
+            left: kSpaceL,
+            right: kSpaceL,
+            child: _buildControlPanel(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(kSpaceM),
+        decoration: kGlassDecoration(opacity: 0.9),
+        child: Icon(icon, color: color, size: 22),
+      ),
+    );
+  }
+
+  Widget _buildControlPanel() {
+    final duration = _startTime != null
+        ? DateTime.now().difference(_startTime!)
+        : Duration.zero;
+
+    return Container(
+      padding: const EdgeInsets.all(kSpaceL),
+      decoration: BoxDecoration(
+        color: kCardBackground,
+        borderRadius: BorderRadius.circular(kRadiusXXL),
+        boxShadow: [kShadowL],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Stats Row (visible when walking)
+          if (_isWalking) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.timer_rounded,
+                    label: '시간',
+                    value: _formatDuration(duration),
+                    color: kSecondaryColor,
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 40,
+                  color: kTextMuted.withOpacity(0.3),
+                ),
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.straighten_rounded,
+                    label: '거리',
+                    value: '${_calculateDistance().toStringAsFixed(2)} km',
+                    color: kAccentGreen,
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 40,
+                  color: kTextMuted.withOpacity(0.3),
+                ),
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.favorite_rounded,
+                    label: 'BPM',
+                    value: '$_currentBpm',
+                    color: kAccentColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: kSpaceL),
+          ],
+
+          // Main Button
+          Row(
+            children: [
+              if (!_isWalking) ...[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        _isWalking ? "Tracking Walk..." : "Ready to Walk?",
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: kPrimaryColor,
+                        '산책 준비 완료',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: kSpaceXXS),
+                      Text(
+                        '반려동물과 함께 산책을 시작하세요',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: kTextTertiary,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-
-                  // Action Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: _toggleWalking,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _isWalking
-                            ? kAccentColor
-                            : kSecondaryColor,
-                        foregroundColor: Colors.white,
-                        elevation: 8,
-                        shadowColor:
-                            (_isWalking ? kAccentColor : kSecondaryColor)
-                                .withOpacity(0.4),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                ),
+                const SizedBox(width: kSpaceL),
+              ],
+              Expanded(
+                flex: _isWalking ? 1 : 0,
+                child: AnimatedBuilder(
+                  animation: _pulseAnimation,
+                  builder: (context, child) {
+                    return Transform.scale(
+                      scale: _isWalking ? _pulseAnimation.value : 1.0,
+                      child: SizedBox(
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: _toggleWalking,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                _isWalking ? kAccentColor : kSecondaryColor,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(kRadiusL),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _isWalking
+                                    ? Icons.stop_rounded
+                                    : Icons.play_arrow_rounded,
+                                size: 24,
+                              ),
+                              const SizedBox(width: kSpaceS),
+                              Text(
+                                _isWalking ? '산책 종료' : '시작',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      child: Text(
-                        _isWalking ? "Stop Walking" : "Start Walking",
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  if (_isWalking)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16),
-                      child: Text(
-                        "Points: ${_pathPoints.length}",
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                ],
+                    );
+                  },
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: kSpaceXS),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: kTextTertiary,
+            fontSize: 10,
+          ),
+        ),
+      ],
     );
   }
 }

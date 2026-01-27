@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/constants.dart';
@@ -14,6 +15,7 @@ class PetProfileCard extends ConsumerWidget {
     WidgetRef ref,
     PetProfile profile,
   ) async {
+    HapticFeedback.selectionClick();
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
@@ -31,104 +33,142 @@ class PetProfileCard extends ConsumerWidget {
     return petState.when(
       data: (profile) {
         return Container(
-          padding: const EdgeInsets.all(kPaddingM),
+          padding: const EdgeInsets.all(kSpaceL),
           decoration: BoxDecoration(
             color: kCardBackground,
-            borderRadius: BorderRadius.circular(kBorderRadiusL),
-            boxShadow: [kSoftShadow],
+            borderRadius: BorderRadius.circular(kRadiusXXL),
+            boxShadow: [kShadowM, kShadowS],
           ),
           child: Column(
             children: [
               Row(
                 children: [
-                  // Profile Image
+                  // Profile Image with gradient border
                   GestureDetector(
                     onTap: () => _pickImage(context, ref, profile),
-                    child: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 30,
-                          backgroundColor: kSecondaryColor.withValues(
-                            alpha: 0.1,
-                          ),
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        gradient: kPrimaryGradient,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: kCardBackground,
+                          shape: BoxShape.circle,
+                        ),
+                        child: CircleAvatar(
+                          radius: 32,
+                          backgroundColor: kSurfaceElevated,
                           backgroundImage: profile.imagePath.isNotEmpty
                               ? FileImage(File(profile.imagePath))
                               : null,
                           child: profile.imagePath.isEmpty
                               ? const Icon(
-                                  Icons.pets,
+                                  Icons.pets_rounded,
                                   size: 30,
                                   color: kSecondaryColor,
                                 )
                               : null,
                         ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: kPrimaryColor,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt,
-                              size: 12,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 16),
+
+                  const SizedBox(width: kSpaceL),
+
                   // Info
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              profile.name,
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.edit_rounded,
-                                size: 20,
-                                color: kTextSecondary,
+                            Expanded(
+                              child: Text(
+                                profile.name,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
                               ),
-                              onPressed: () =>
-                                  _showEditDialog(context, ref, profile),
                             ),
+                            _buildEditButton(context, ref, profile),
                           ],
                         ),
-                        Text(
-                          "${profile.breed} • ${profile.age}살",
-                          style: Theme.of(context).textTheme.bodyMedium,
+                        const SizedBox(height: kSpaceXXS),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.pets_rounded,
+                              size: 14,
+                              color: kTextTertiary,
+                            ),
+                            const SizedBox(width: kSpaceXS),
+                            Text(
+                              "${profile.breed}",
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: kTextSecondary),
+                            ),
+                            Container(
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: kSpaceS,
+                              ),
+                              width: 4,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: kTextTertiary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            Text(
+                              "${profile.age}살",
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: kTextSecondary),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              // Chips
+
+              const SizedBox(height: kSpaceL),
+
+              // Stats Row
               Row(
                 children: [
-                  _buildInfoChip(
-                    context,
-                    Icons.monitor_weight_rounded,
-                    "${profile.weight}kg",
+                  Expanded(
+                    child: _buildStatItem(
+                      context,
+                      icon: Icons.monitor_weight_rounded,
+                      label: '체중',
+                      value: "${profile.weight}kg",
+                      color: kAccentOrange,
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  _buildInfoChip(
-                    context,
-                    Icons.favorite_rounded,
-                    "${profile.heartRate} bpm",
-                    color: Colors.redAccent,
+                  Container(
+                    width: 1,
+                    height: 40,
+                    color: kTextMuted.withOpacity(0.3),
+                  ),
+                  Expanded(
+                    child: _buildStatItem(
+                      context,
+                      icon: Icons.favorite_rounded,
+                      label: '심박수',
+                      value: "${profile.heartRate}",
+                      suffix: 'bpm',
+                      color: kAccentColor,
+                    ),
                   ),
                 ],
               ),
@@ -136,33 +176,125 @@ class PetProfileCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, stack) => Text('Error: $err'),
+      loading: () => _buildLoadingState(),
+      error: (err, stack) => _buildErrorState(context, err),
     );
   }
 
-  Widget _buildInfoChip(
+  Widget _buildEditButton(
     BuildContext context,
-    IconData icon,
-    String label, {
-    Color? color,
+    WidgetRef ref,
+    PetProfile profile,
+  ) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        _showEditDialog(context, ref, profile);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(kSpaceS),
+        decoration: BoxDecoration(
+          color: kSurfaceElevated,
+          borderRadius: BorderRadius.circular(kRadiusS),
+        ),
+        child: const Icon(
+          Icons.edit_rounded,
+          size: 18,
+          color: kTextSecondary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatItem(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+    String? suffix,
+    required Color color,
   }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(kSpaceS),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(kRadiusS),
+          ),
+          child: Icon(icon, size: 18, color: color),
+        ),
+        const SizedBox(width: kSpaceM),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: kTextTertiary,
+              ),
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (suffix != null) ...[
+                  const SizedBox(width: kSpaceXXS),
+                  Text(
+                    suffix,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: kTextTertiary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.all(kSpaceXXL),
       decoration: BoxDecoration(
-        color: (color ?? kSecondaryColor).withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
+        color: kCardBackground,
+        borderRadius: BorderRadius.circular(kRadiusXXL),
+        boxShadow: [kShadowS],
+      ),
+      child: const Center(
+        child: CircularProgressIndicator(
+          color: kSecondaryColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(BuildContext context, Object err) {
+    return Container(
+      padding: const EdgeInsets.all(kSpaceL),
+      decoration: BoxDecoration(
+        color: kErrorColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(kRadiusXXL),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color ?? kSecondaryColor),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: color ?? kSecondaryColor,
-              fontWeight: FontWeight.bold,
+          const Icon(Icons.error_outline_rounded, color: kErrorColor),
+          const SizedBox(width: kSpaceM),
+          Expanded(
+            child: Text(
+              'Error: $err',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: kErrorColor,
+              ),
             ),
           ),
         ],
@@ -181,61 +313,141 @@ class PetProfileCard extends ConsumerWidget {
     final breedController = TextEditingController(text: profile.breed);
     final hrController = TextEditingController(text: profile.heartRate);
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Edit Profile"),
-        content: SingleChildScrollView(
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: EdgeInsets.only(
+          left: kSpaceXXL,
+          right: kSpaceXXL,
+          top: kSpaceXXL,
+          bottom: MediaQuery.of(context).viewInsets.bottom + kSpaceXXL,
+        ),
+        decoration: BoxDecoration(
+          color: kCardBackground,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(kRadiusXXL),
+          ),
+        ),
+        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
+              // Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: kTextMuted,
+                    borderRadius: BorderRadius.circular(kRadiusFull),
+                  ),
+                ),
+              ),
+              const SizedBox(height: kSpaceXXL),
+
+              // Title
+              Text(
+                '프로필 수정',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: kSpaceXXL),
+
+              // Fields
+              _buildEditField(
                 controller: nameController,
-                decoration: const InputDecoration(labelText: "Name"),
+                label: '이름',
+                icon: Icons.badge_rounded,
               ),
-              TextField(
+              const SizedBox(height: kSpaceL),
+              _buildEditField(
                 controller: breedController,
-                decoration: const InputDecoration(labelText: "Breed"),
+                label: '품종',
+                icon: Icons.pets_rounded,
               ),
-              TextField(
-                controller: ageController,
-                decoration: const InputDecoration(labelText: "Age"),
+              const SizedBox(height: kSpaceL),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildEditField(
+                      controller: ageController,
+                      label: '나이',
+                      icon: Icons.cake_rounded,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: kSpaceL),
+                  Expanded(
+                    child: _buildEditField(
+                      controller: weightController,
+                      label: '체중 (kg)',
+                      icon: Icons.monitor_weight_rounded,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: kSpaceL),
+              _buildEditField(
+                controller: hrController,
+                label: '평균 심박수',
+                icon: Icons.favorite_rounded,
                 keyboardType: TextInputType.number,
               ),
-              TextField(
-                controller: weightController,
-                decoration: const InputDecoration(labelText: "Weight"),
-              ),
-              TextField(
-                controller: hrController,
-                decoration: const InputDecoration(labelText: "Avg Heart Rate"),
+              const SizedBox(height: kSpaceXXL),
+
+              // Actions
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('취소'),
+                    ),
+                  ),
+                  const SizedBox(width: kSpaceL),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        ref.read(petControllerProvider.notifier).updateProfile(
+                          profile.copyWith(
+                            name: nameController.text,
+                            age: ageController.text,
+                            weight: weightController.text,
+                            breed: breedController.text,
+                            heartRate: hrController.text,
+                          ),
+                        );
+                        Navigator.pop(context);
+                      },
+                      child: const Text('저장'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              ref
-                  .read(petControllerProvider.notifier)
-                  .updateProfile(
-                    profile.copyWith(
-                      name: nameController.text,
-                      age: ageController.text,
-                      weight: weightController.text,
-                      breed: breedController.text,
-                      heartRate: hrController.text,
-                    ),
-                  );
-              Navigator.pop(context);
-            },
-            child: const Text("Save"),
-          ),
-        ],
+      ),
+    );
+  }
+
+  Widget _buildEditField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType? keyboardType,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, size: 20),
       ),
     );
   }

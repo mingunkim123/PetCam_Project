@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../constants/constants.dart';
 
 class ConnectionStatusBadge extends StatelessWidget {
   final bool isConnected;
-  final VoidCallback? onTap; // Added onTap callback
+  final VoidCallback? onTap;
 
   const ConnectionStatusBadge({
     super.key,
@@ -13,58 +14,62 @@ class ConnectionStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: isConnected
-                ? Colors.green.withOpacity(0.1)
-                : Colors.red.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isConnected
-                  ? Colors.green.withOpacity(0.3)
-                  : Colors.red.withOpacity(0.3),
-              width: 1,
+    final color = isConnected ? kSuccessColor : kTextTertiary;
+    final text = isConnected ? '연결됨' : '연결 안됨';
+    final icon = isConnected
+        ? Icons.bluetooth_connected_rounded
+        : Icons.bluetooth_disabled_rounded;
+
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap?.call();
+      },
+      child: AnimatedContainer(
+        duration: kDurationMedium,
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpaceM,
+          vertical: kSpaceS,
+        ),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(kRadiusFull),
+          border: Border.all(
+            color: color.withOpacity(0.2),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Animated dot
+            AnimatedContainer(
+              duration: kDurationMedium,
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                boxShadow: isConnected
+                    ? [
+                        BoxShadow(
+                          color: color.withOpacity(0.4),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : null,
+              ),
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 500),
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isConnected ? Colors.green : Colors.red,
-                  boxShadow: [
-                    BoxShadow(
-                      color: (isConnected ? Colors.green : Colors.red)
-                          .withOpacity(0.4),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
+            const SizedBox(width: kSpaceS),
+            Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(width: 8),
-              Text(
-                isConnected ? "LINKED" : "CONNECT",
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: isConnected ? Colors.green : Colors.red,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -7,6 +7,16 @@ class PetProfile {
   final String breed;
   final String heartRate;
 
+  // New: Favorites
+  final String favoriteCourse;
+  final String favoriteFood;
+  final String favoritePlace;
+
+  // New: Favorite Images
+  final String favoriteCourseImage;
+  final String favoriteFoodImage;
+  final String favoritePlaceImage;
+
   PetProfile({
     required this.name,
     required this.imagePath,
@@ -15,6 +25,12 @@ class PetProfile {
     required this.weight,
     required this.breed,
     required this.heartRate,
+    required this.favoriteCourse,
+    required this.favoriteFood,
+    required this.favoritePlace,
+    required this.favoriteCourseImage,
+    required this.favoriteFoodImage,
+    required this.favoritePlaceImage,
   });
 
   // Default empty profile
@@ -27,6 +43,12 @@ class PetProfile {
       weight: "0kg",
       breed: "Unknown",
       heartRate: "0 BPM",
+      favoriteCourse: "Han River Park",
+      favoriteFood: "Chicken Breast",
+      favoritePlace: "Sofa",
+      favoriteCourseImage: "assets/images/fav_course.png",
+      favoriteFoodImage: "assets/images/fav_food.png",
+      favoritePlaceImage: "assets/images/fav_place.png",
     );
   }
 
@@ -39,6 +61,12 @@ class PetProfile {
       'weight': weight,
       'breed': breed,
       'heartRate': heartRate,
+      'favoriteCourse': favoriteCourse,
+      'favoriteFood': favoriteFood,
+      'favoritePlace': favoritePlace,
+      'favoriteCourseImage': favoriteCourseImage,
+      'favoriteFoodImage': favoriteFoodImage,
+      'favoritePlaceImage': favoritePlaceImage,
     };
   }
 
@@ -51,6 +79,15 @@ class PetProfile {
       weight: json['weight'] ?? "0kg",
       breed: json['breed'] ?? "Unknown",
       heartRate: json['heartRate'] ?? "0 BPM",
+      favoriteCourse: json['favoriteCourse'] ?? "Han River Park",
+      favoriteFood: json['favoriteFood'] ?? "Chicken Breast",
+      favoritePlace: json['favoritePlace'] ?? "Sofa",
+      favoriteCourseImage:
+          json['favoriteCourseImage'] ?? "assets/images/fav_course.png",
+      favoriteFoodImage:
+          json['favoriteFoodImage'] ?? "assets/images/fav_food.png",
+      favoritePlaceImage:
+          json['favoritePlaceImage'] ?? "assets/images/fav_place.png",
     );
   }
 
@@ -62,6 +99,12 @@ class PetProfile {
     String? weight,
     String? breed,
     String? heartRate,
+    String? favoriteCourse,
+    String? favoriteFood,
+    String? favoritePlace,
+    String? favoriteCourseImage,
+    String? favoriteFoodImage,
+    String? favoritePlaceImage,
   }) {
     return PetProfile(
       name: name ?? this.name,
@@ -71,6 +114,12 @@ class PetProfile {
       weight: weight ?? this.weight,
       breed: breed ?? this.breed,
       heartRate: heartRate ?? this.heartRate,
+      favoriteCourse: favoriteCourse ?? this.favoriteCourse,
+      favoriteFood: favoriteFood ?? this.favoriteFood,
+      favoritePlace: favoritePlace ?? this.favoritePlace,
+      favoriteCourseImage: favoriteCourseImage ?? this.favoriteCourseImage,
+      favoriteFoodImage: favoriteFoodImage ?? this.favoriteFoodImage,
+      favoritePlaceImage: favoritePlaceImage ?? this.favoritePlaceImage,
     );
   }
 }
