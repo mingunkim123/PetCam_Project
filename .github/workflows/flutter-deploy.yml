@@ -1,0 +1,261 @@
+# ==============================================================================
+# PetCam Mobile App - CD (Continuous Deployment)
+# ==============================================================================
+# 이 워크플로우가 하는 일:
+#   1. Release APK/AAB 빌드 (서명 포함)
+#   2. (선택) Google Play Store 배포
+#   3. (선택) Apple App Store 배포
+#
+# 실행 시점:
+#   - 수동으로만 실행 (workflow_dispatch)
+#   - 버전 태그 생성 시 (예: v1.0.0)
+#
+# 필요한 GitHub Secrets:
+#   - KEYSTORE_BASE64: Android 키스토어 파일 (Base64 인코딩)
+#   - KEYSTORE_PASSWORD: 키스토어 비밀번호
+#   - KEY_ALIAS: 키 별칭
+#   - KEY_PASSWORD: 키 비밀번호
+#   - PLAY_STORE_CREDENTIALS: Google Play API JSON (선택)
+#   - API_URL: 프로덕션 API URL
+#   - NAVER_MAP_CLIENT_ID: 네이버 맵 클라이언트 ID
+# ==============================================================================
+
+name: Flutter Deploy
+
+on:
+  # 수동 실행
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '빌드 타입 선택'
+        required: true
+        default: 'apk'
+        type: choice
+        options:
+          - apk      # APK 파일 (테스트용)
+          - aab      # App Bundle (Play Store용)
+          - both     # 둘 다
+      
+      deploy_target:
+        description: '배포 대상'
+        required: true
+        default: 'none'
+        type: choice
+        options:
+          - none          # 빌드만 (배포 안 함)
+          - internal      # 내부 테스트 트랙
+          - production    # 프로덕션 (주의!)
+      
+      version_bump:
+        description: '버전 증가'
+        required: false
+        default: 'patch'
+        type: choice
+        options:
+          - none    # 버전 변경 안 함
+          - patch   # 1.0.0 → 1.0.1
+          - minor   # 1.0.0 → 1.1.0
+          - major   # 1.0.0 → 2.0.0
+
+  # 버전 태그 생성 시 자동 실행
+  push:
+    tags:
+      - 'v*.*.*'  # 예: v1.0.0, v1.2.3
+
+env:
+  FLUTTER_VERSION: '3.24.0'
+
+jobs:
+  # ============================================================================
+  # Job 1: Android Release 빌드
+  # ============================================================================
+  build-android-release:
+    name: Android Release 빌드
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Java 설치
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Flutter 설치
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: 의존성 설치
+        working-directory: mobile_app
+        run: flutter pub get
+
+      # 프로덕션 환경 파일 생성
+      - name: 환경 파일 생성
+        working-directory: mobile_app
+        run: |
+          echo "API_URL=${{ secrets.API_URL }}" > .env
+          echo "NAVER_MAP_CLIENT_ID=${{ secrets.NAVER_MAP_CLIENT_ID }}" >> .env
+
+      # Android 서명 키 설정
+      - name: Android 서명 키 설정
+        if: env.KEYSTORE_EXISTS == 'true'
+        env:
+          KEYSTORE_EXISTS: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        working-directory: mobile_app/android
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/upload-keystore.jks
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> key.properties
+          echo "storeFile=upload-keystore.jks" >> key.properties
+
+      # APK 빌드
+      - name: APK 빌드 (Release)
+        if: github.event.inputs.build_type == 'apk' || github.event.inputs.build_type == 'both' || github.event_name == 'push'
+        working-directory: mobile_app
+        run: |
+          echo "🔨 Release APK 빌드 중..."
+          flutter build apk --release
+          echo "✅ APK 빌드 완료"
+
+      # AAB 빌드 (Play Store용)
+      - name: AAB 빌드 (Release)
+        if: github.event.inputs.build_type == 'aab' || github.event.inputs.build_type == 'both'
+        working-directory: mobile_app
+        run: |
+          echo "🔨 Release AAB 빌드 중..."
+          flutter build appbundle --release
+          echo "✅ AAB 빌드 완료"
+
+      # APK 업로드
+      - name: APK 파일 업로드
+        if: github.event.inputs.build_type == 'apk' || github.event.inputs.build_type == 'both' || github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-release
+          path: mobile_app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+
+      # AAB 업로드
+      - name: AAB 파일 업로드
+        if: github.event.inputs.build_type == 'aab' || github.event.inputs.build_type == 'both'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab-release
+          path: mobile_app/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: 빌드 결과 출력
+        run: |
+          echo "=========================================="
+          echo "📱 Android Release 빌드 완료!"
+          echo "=========================================="
+          if [ -f mobile_app/build/app/outputs/flutter-apk/app-release.apk ]; then
+            echo "APK: $(ls -lh mobile_app/build/app/outputs/flutter-apk/app-release.apk)"
+          fi
+          if [ -f mobile_app/build/app/outputs/bundle/release/app-release.aab ]; then
+            echo "AAB: $(ls -lh mobile_app/build/app/outputs/bundle/release/app-release.aab)"
+          fi
+
+  # ============================================================================
+  # Job 2: Google Play Store 배포 (선택)
+  # ============================================================================
+  deploy-play-store:
+    name: Play Store 배포
+    runs-on: ubuntu-latest
+    needs: build-android-release
+    # 수동 실행이고, 배포 대상이 'none'이 아닐 때만 실행
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      github.event.inputs.deploy_target != 'none' &&
+      secrets.PLAY_STORE_CREDENTIALS != ''
+
+    steps:
+      - name: AAB 파일 다운로드
+        uses: actions/download-artifact@v4
+        with:
+          name: android-aab-release
+          path: ./release
+
+      - name: Play Store 배포
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_CREDENTIALS }}
+          packageName: com.example.mobile_app  # TODO: 실제 패키지명으로 변경
+          releaseFiles: ./release/app-release.aab
+          track: ${{ github.event.inputs.deploy_target == 'production' && 'production' || 'internal' }}
+          status: completed
+
+      - name: 배포 완료 알림
+        run: |
+          echo "🚀 Google Play Store 배포 완료!"
+          echo "트랙: ${{ github.event.inputs.deploy_target }}"
+
+  # ============================================================================
+  # Job 3: 릴리즈 노트 생성
+  # ============================================================================
+  create-release:
+    name: GitHub Release 생성
+    runs-on: ubuntu-latest
+    needs: build-android-release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: APK 다운로드
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk-release
+          path: ./release
+
+      - name: GitHub Release 생성
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./release/app-release.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 릴리즈 완료 알림
+        run: |
+          echo "🎉 GitHub Release 생성 완료!"
+          echo "태그: ${{ github.ref_name }}"
+
+  # ============================================================================
+  # 배포 요약
+  # ============================================================================
+  summary:
+    name: 배포 요약
+    runs-on: ubuntu-latest
+    needs: [build-android-release]
+    if: always()
+
+    steps:
+      - name: 결과 요약
+        run: |
+          echo "=========================================="
+          echo "📱 PetCam Mobile App 배포 결과"
+          echo "=========================================="
+          echo "빌드 타입: ${{ github.event.inputs.build_type || 'auto' }}"
+          echo "배포 대상: ${{ github.event.inputs.deploy_target || 'release-only' }}"
+          echo "Android 빌드: ${{ needs.build-android-release.result }}"
+          echo "=========================================="
+          
+          if [ "${{ needs.build-android-release.result }}" == "success" ]; then
+            echo "✅ 배포 성공!"
+            echo ""
+            echo "📥 APK 다운로드:"
+            echo "   GitHub Actions → Artifacts에서 다운로드 가능"
+          else
+            echo "❌ 배포 실패"
+          fi
