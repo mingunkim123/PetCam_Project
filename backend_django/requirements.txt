@@ -1,0 +1,9 @@
+Django>=4.2,<5
+djangorestframework
+django-cors-headers
+django-environ
+psycopg2-binary
+PyJWT
+passlib[bcrypt]
+opencv-python
+Pillow
