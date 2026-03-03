@@ -1,0 +1,17 @@
+항목,분류,부품명,제조사,제조사 부품번호,사양/설명,패키지,수량,대체부품,비고
+1,MCU 모듈,ESP32-S3-WROOM-1-N16R8V,Espressif,ESP32-S3-WROOM-1-N16R8V,240MHz Dual-Core / 16MB QIO Flash / 8MB OPI PSRAM / WiFi 802.11 b/g/n / BLE 5.0,Module (18×25.5mm),1,,핵심 제어 모듈 — DevKitC-1 개발보드 사용 시 별도 구매 불필요
+2,카메라 모듈,OV3660 카메라 모듈,OmniVision,OV3660,3MP UXGA(1600×1200) / DVP 8-bit 병렬 인터페이스 / SCCB(I2C) 제어 / JPEG 출력,24pin FPC,1,OV2640 (2MP 하위호환),XCLK 20MHz / JPEG Q10 / 프레임버퍼 PSRAM 저장
+3,IMU 센서,MPU-6050,InvenSense (TDK),MPU-6050,6축 (3축 가속도 + 3축 자이로) / I2C 주소 0x68 / ±4g ±500°/s / DLPF 42Hz,QFN-24 (4×4mm),1,ICM-20602,I2C Fast Mode 400kHz — 반려동물 활동량·꼬리흔들기·수면 감지용
+4,심박/산소포화도 센서,MAX30102,Maxim Integrated (Analog Devices),MAX30102EFD+,광학 심박(HR) 및 SpO2 센서 / I2C 주소 0x57 / IR LED 모드 / 400 SPS,OLGA-14 (5.6×3.3mm),1,MAX30101,I2C Fast Mode 400kHz — 반려동물 심박수·HRV 측정용
+5,풀업 저항 (I2C SDA),칩 저항 4.7kΩ,Any,—,I2C SDA 풀업 (센서 버스: GPIO1),0402 (1005M),1,,센서 I2C Bus 1용
+6,풀업 저항 (I2C SCL),칩 저항 4.7kΩ,Any,—,I2C SCL 풀업 (센서 버스: GPIO2),0402 (1005M),1,,센서 I2C Bus 1용
+7,바이패스 캡 (MCU),MLCC 100nF,Any,—,MCU 전원 바이패스 커패시터,0402 (1005M),4,,VDD 핀 근처 배치
+8,벌크 캡 (MCU),MLCC 10µF,Any,—,MCU 전원 벌크 커패시터,0603 (1608M),2,,전원 입력단
+9,바이패스 캡 (MPU6050),MLCC 100nF,Any,—,MPU6050 전원 바이패스,0402 (1005M),1,,VDD 핀 근처 배치
+10,바이패스 캡 (MAX30102),MLCC 100nF,Any,—,MAX30102 전원 바이패스,0402 (1005M),1,,VDD 핀 근처 배치
+11,벌크 캡 (MAX30102),MLCC 1µF,Any,—,MAX30102 LED 드라이버 전원,0402 (1005M),1,,데이터시트 참조
+12,3.3V LDO 레귤레이터,AMS1117-3.3 또는 동급,AMS / Any,AMS1117-3.3,3.3V 출력 / 입력 4.5~12V / 드롭아웃 1.1V / 1A,SOT-223,1,AP2112K-3.3 (더 낮은 Quiescent Current),배터리 또는 외부 5V → 3.3V 변환
+13,입력 캡 (LDO),MLCC 10µF,Any,—,LDO 입력 안정화,0603 (1608M),1,,LDO 입력단
+14,출력 캡 (LDO),MLCC 22µF,Any,—,LDO 출력 안정화,0805 (2012M),1,,LDO 출력단
+15,USB-C 커넥터,USB Type-C 16P,Any,—,충전 및 프로그래밍용 / USB 2.0,SMD,1,,개발보드 사용 시 내장
+16,FPC 커넥터 (카메라),24핀 FPC 커넥터,Any,—,OV3660 카메라 모듈 연결용 / 0.5mm 피치,SMD,1,,카메라 모듈 규격에 맞춤

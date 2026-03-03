@@ -9,7 +9,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.authentication import JWTAuthentication
 from services.ai_service import run_ai_task
 
 from .models import PhotoRecord, ProcessingStatus
@@ -20,6 +19,7 @@ STORAGE_ORIGINALS = Path(settings.BASE_DIR) / "storage" / "originals"
 def _get_blur_score(path: str) -> float:
     """Laplacian variance로 선명도(blur 반대) 점수 계산. 높을수록 선명함."""
     import cv2
+
     img = cv2.imread(path)
     if img is None:
         return -1.0
@@ -29,7 +29,7 @@ def _get_blur_score(path: str) -> float:
 
 class UpscaleView(APIView):
     """POST /upscale - multipart file, lat, lng로 이미지 업로드."""
-    authentication_classes = [JWTAuthentication]
+
     throttle_scope = "upscale_bestcut"
 
     def post(self, request: Request) -> Response:
@@ -79,7 +79,7 @@ class UpscaleView(APIView):
 
 class BestCutView(APIView):
     """POST /bestcut - 다중 파일 중 블러 점수 최고 파일만 남기고 PhotoRecord 생성."""
-    authentication_classes = [JWTAuthentication]
+
     throttle_scope = "upscale_bestcut"
 
     def post(self, request: Request) -> Response:
@@ -137,7 +137,9 @@ class BestCutView(APIView):
                 longitude=lng,
             )
 
-            threading.Thread(target=run_ai_task, args=(str(photo_id),), daemon=True).start()
+            threading.Thread(
+                target=run_ai_task, args=(str(photo_id),), daemon=True
+            ).start()
 
             return Response(
                 {
@@ -158,7 +160,7 @@ class BestCutView(APIView):
 
 class PhotoListView(APIView):
     """GET /photos?skip=0&limit=100 - 사진 목록."""
-    authentication_classes = [JWTAuthentication]
+
     throttle_scope = "photos"
 
     def get(self, request: Request) -> Response:
@@ -183,7 +185,7 @@ class PhotoListView(APIView):
 
 class PhotoDetailView(APIView):
     """GET /photos/{id}?type=upscaled - 이미지 파일, DELETE /photos/{id} - 삭제."""
-    authentication_classes = [JWTAuthentication]
+
     throttle_scope = "photos"
 
     def get(self, request: Request, photo_id: uuid.UUID) -> Response:

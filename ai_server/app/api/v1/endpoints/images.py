@@ -9,7 +9,7 @@ import os
 from app.api import deps
 from app.services.image_service import image_service
 from app.models.photo import PhotoRecord
-from app.core.config import settings
+from app.core.fastapi_config import settings
 
 router = APIRouter()
 

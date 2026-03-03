@@ -1,27 +1,20 @@
 """
-URL configuration for petcam project.
+PetCam URL Configuration
 
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/4.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+API 버저닝: /api/v1/ prefix 사용
+- /api/v1/auth/   → accounts 앱 (인증 관련)
+- /api/v1/photos/ → photos 앱 (사진 관련)
+- /api/health/    → 서버 상태 확인
 """
+
 from django.contrib import admin
 from django.urls import path, include
 
-from . import views
+from .views import HealthView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("health", views.health_view),
-    path("", include("accounts.urls")),
-    path("", include("photos.urls")),
+    path("api/health/", HealthView.as_view(), name="health"),
+    path("api/v1/auth/", include("accounts.urls")),
+    path("api/v1/photos/", include("photos.urls")),
 ]

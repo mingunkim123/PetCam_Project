@@ -1,7 +1,14 @@
 """프로젝트 공통 뷰"""
-from django.http import JsonResponse
+
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 
-def health_view(request):
+class HealthView(APIView):
     """GET /health - 서버 상태 확인."""
-    return JsonResponse({"status": "ok", "version": "1.0.0"})
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({"status": "ok", "version": "1.0.0"})

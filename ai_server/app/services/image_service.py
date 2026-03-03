@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 from PIL import Image
 import io
-from app.core.config import settings
+from app.core.fastapi_config import settings
 import os
 
 try:

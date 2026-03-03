@@ -1,11 +1,17 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .auth_utils import create_access_token, create_refresh_token, verify_refresh_token, revoke_refresh_token
+from .auth_utils import (
+    create_access_token,
+    create_refresh_token,
+    verify_refresh_token,
+    revoke_refresh_token,
+)
 from .utils import get_password_hash, verify_password
 
 User = get_user_model()
@@ -13,6 +19,8 @@ User = get_user_model()
 
 class RegisterView(APIView):
     """POST /register - JSON {username, password}로 회원가입."""
+
+    permission_classes = [AllowAny]
     throttle_scope = "register"
 
     def post(self, request: Request) -> Response:
@@ -48,6 +56,8 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     """POST /token - form-data username, password로 로그인 → access_token, refresh_token 반환."""
+
+    permission_classes = [AllowAny]
     throttle_scope = "token"
 
     def post(self, request: Request) -> Response:
@@ -85,16 +95,20 @@ class LoginView(APIView):
         expire_minutes = getattr(settings, "ACCESS_TOKEN_EXPIRE_MINUTES", 30)
         expires_in = expire_minutes * 60
 
-        return Response({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "expires_in": expires_in,
-        })
+        return Response(
+            {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "expires_in": expires_in,
+            }
+        )
 
 
 class RefreshTokenView(APIView):
     """POST /token/refresh - JSON {refresh_token}으로 새 access_token 발급."""
+
+    permission_classes = [AllowAny]
     throttle_scope = "refresh"
 
     def post(self, request: Request) -> Response:
@@ -114,14 +128,18 @@ class RefreshTokenView(APIView):
             )
 
         access_token = create_access_token(user.username)
-        return Response({
-            "access_token": access_token,
-            "token_type": "bearer",
-        })
+        return Response(
+            {
+                "access_token": access_token,
+                "token_type": "bearer",
+            }
+        )
 
 
 class LogoutView(APIView):
     """POST /logout - JSON {refresh_token}으로 해당 토큰 무효화."""
+
+    permission_classes = [AllowAny]
     throttle_scope = "logout"
 
     def post(self, request: Request) -> Response:
